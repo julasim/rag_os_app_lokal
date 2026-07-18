@@ -74,6 +74,11 @@ class Settings(BaseSettings):
     query_log_keep_days: int = 90           # DSGVO-Speicherbegrenzung; 0 = nie löschen
     docs_enabled: bool = False              # /docs + /openapi.json nur wenn true
     rerank_enabled: bool = True             # Post-Retrieval-Reranker (BGE) an/aus
+    # Lokale Ein-Nutzer-Desktop-App: die UI-Endpunkte fallen ohne Token auf den
+    # lokalen Admin zurück (kein Login-Wall). NUR vertretbar, weil der Server an
+    # 127.0.0.1 gebunden ist (pywebview-Shell, M8). Für einen echten Mehrbenutzer-/
+    # Netz-Betrieb auf false setzen → normaler Login.
+    local_ui_autologin: bool = True
     # Parsing-Backend: "docling" (layout-aware, Tabellen-/OCR-treu) ist der Standard
     # der lokalen Variante; "legacy" nur als Notfall-Fallback.
     ingest_backend: str = "docling"

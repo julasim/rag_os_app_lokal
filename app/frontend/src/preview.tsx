@@ -27,17 +27,16 @@ type MockUser = {
   role: string;
   access_all: boolean;
   allowed_folders: string[];
-  totp_enabled: boolean;
   created_at: string;
   last_login: string | null;
 };
 
 const now = new Date().toISOString();
 const users: MockUser[] = [
-  { id: 'u-admin', email: 'julius@sima.or.at', role: 'admin', access_all: true, allowed_folders: [], totp_enabled: true, created_at: now, last_login: now },
-  { id: 'u-steuer', email: 'steuerberater@extern.at', role: 'user', access_all: false, allowed_folders: ['/Steuer/'], totp_enabled: false, created_at: now, last_login: new Date(Date.now() - 3600_000).toISOString() },
-  { id: 'u-bau', email: 'bauleiter@firma.at', role: 'user', access_all: false, allowed_folders: ['/Bau/', '/Angebote/'], totp_enabled: false, created_at: now, last_login: null },
-  { id: 'u-neu', email: 'neuer@firma.at', role: 'user', access_all: false, allowed_folders: [], totp_enabled: false, created_at: now, last_login: null },
+  { id: 'u-admin', email: 'julius@sima.or.at', role: 'admin', access_all: true, allowed_folders: [], created_at: now, last_login: now },
+  { id: 'u-steuer', email: 'steuerberater@extern.at', role: 'user', access_all: false, allowed_folders: ['/Steuer/'], created_at: now, last_login: new Date(Date.now() - 3600_000).toISOString() },
+  { id: 'u-bau', email: 'bauleiter@firma.at', role: 'user', access_all: false, allowed_folders: ['/Bau/', '/Angebote/'], created_at: now, last_login: null },
+  { id: 'u-neu', email: 'neuer@firma.at', role: 'user', access_all: false, allowed_folders: [], created_at: now, last_login: null },
 ];
 
 const folders: Record<string, number> = {
@@ -73,7 +72,6 @@ window.fetch = async (input: RequestInfo | URL, init?: RequestInit): Promise<Res
         role: body.role ?? 'user',
         access_all: !!body.access_all,
         allowed_folders: body.access_all ? [] : canon(body.allowed_folders ?? []),
-        totp_enabled: false,
         created_at: new Date().toISOString(),
         last_login: null,
       };

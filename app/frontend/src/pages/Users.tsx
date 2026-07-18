@@ -369,13 +369,13 @@ export default function Users() {
           <div
             style={{
               display: 'grid',
-              gridTemplateColumns: '2fr 1fr 2fr 1fr 1fr 40px',
+              gridTemplateColumns: '2fr 1fr 2fr 1fr 40px',
               padding: '8px 14px',
               borderBottom: '1px solid #ededed',
               background: '#fafafa',
             }}
           >
-            {['E-Mail', 'Rolle', 'Ordner-Zugriff', 'TOTP', 'Letzter Login', ''].map((h) => (
+            {['E-Mail', 'Rolle', 'Ordner-Zugriff', 'Letzter Login', ''].map((h) => (
               <div key={h} style={{ fontSize: 11, fontWeight: 600, color: '#a3a3a3', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
                 {h}
               </div>
@@ -387,7 +387,7 @@ export default function Users() {
               key={u.id}
               style={{
                 display: 'grid',
-                gridTemplateColumns: '2fr 1fr 2fr 1fr 1fr 40px',
+                gridTemplateColumns: '2fr 1fr 2fr 1fr 40px',
                 padding: '10px 14px',
                 borderBottom: '1px solid #ededed',
                 alignItems: 'center',
@@ -418,9 +418,6 @@ export default function Users() {
                     </span>
                   ))
                 )}
-              </div>
-              <div style={{ fontSize: 12, color: u.totp_enabled ? '#166534' : '#a3a3a3' }}>
-                {u.totp_enabled ? 'aktiv' : '—'}
               </div>
               <div style={{ fontSize: 12, color: '#737373' }}>{formatRelative(u.last_login)}</div>
               <div style={{ display: 'flex', gap: 4, justifyContent: 'flex-end' }}>

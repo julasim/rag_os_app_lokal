@@ -6,7 +6,6 @@ export interface AdminUser {
   role: string; // "admin" | "user"
   access_all: boolean;
   allowed_folders: string[];
-  totp_enabled: boolean;
   created_at: string;
   last_login: string | null;
 }

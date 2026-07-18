@@ -1,10 +1,11 @@
-import React, { createContext, useContext, useState } from 'react';
-import { getToken, setToken, clearToken } from '../api/client';
+import React, { createContext, useContext, useEffect, useState } from 'react';
+import { setToken, clearToken, apiGet } from '../api/client';
 import { login as apiLogin, logout as apiLogout } from '../api/auth';
 import type { User } from '../types';
 
 interface AuthCtx {
   user: User | null;
+  ready: boolean;
   isLoggedIn: boolean;
   isAdmin: boolean;
   login: (email: string, password: string) => Promise<void>;
@@ -18,8 +19,38 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const raw = localStorage.getItem('rag_user');
     return raw ? (JSON.parse(raw) as User) : null;
   });
+  const [ready, setReady] = useState<boolean>(() => !!localStorage.getItem('rag_user'));
 
-  const isLoggedIn = !!user && !!getToken();
+  // Lokaler Desktop-Modus: ohne gespeicherten User einmal /me versuchen. Das
+  // Backend liefert im lokalen Modus (127.0.0.1, Ein-Nutzer) automatisch den
+  // Admin → kein Login-Wall. Schlägt es fehl (echter Mehrbenutzer-Betrieb),
+  // bleibt user=null und die Login-Seite greift.
+  useEffect(() => {
+    if (user) {
+      setReady(true);
+      return;
+    }
+    let cancelled = false;
+    apiGet<User>('/api/auth/me')
+      .then((u) => {
+        if (!cancelled) {
+          localStorage.setItem('rag_user', JSON.stringify(u));
+          setUser(u);
+        }
+      })
+      .catch(() => {
+        /* nicht lokal / nicht eingeloggt → Login-Seite */
+      })
+      .finally(() => {
+        if (!cancelled) setReady(true);
+      });
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const isLoggedIn = !!user;
   const isAdmin = user?.role === 'admin';
 
   async function login(email: string, password: string) {
@@ -38,7 +69,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   return React.createElement(
     AuthContext.Provider,
-    { value: { user, isLoggedIn, isAdmin, login, logout } },
+    { value: { user, ready, isLoggedIn, isAdmin, login, logout } },
     children
   );
 }

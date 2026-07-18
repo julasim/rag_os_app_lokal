@@ -15,8 +15,24 @@ from sqlalchemy import select
 from auth.folders import key_allows_folder, user_allows_folder
 from auth.keys import verify_api_key
 from auth.users import decode_session_token
+from config import settings
 from db.models import ApiKey, UiUser, UserRole
 from db.session import get_session
+
+
+async def _local_admin() -> UiUser | None:
+    """Lokaler Desktop-Modus (127.0.0.1, Ein-Nutzer): UI-Endpunkte ohne Token
+    fallen auf den lokalen Admin zurück. None, wenn deaktiviert oder kein Admin."""
+    if not settings().local_ui_autologin:
+        return None
+    async with get_session() as s:
+        return (
+            await s.execute(
+                select(UiUser)
+                .where(UiUser.email == settings().admin_email)
+                .limit(1)
+            )
+        ).scalar_one_or_none()
 
 
 # ---------------------------------------------------------------------------
@@ -94,6 +110,9 @@ async def require_ui_user(
 ) -> AuthContext:
     token = session_token or x_ui_token
     if not token:
+        local = await _local_admin()
+        if local:
+            return AuthContext(ui_user=local)
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Not authenticated")
 
     payload = decode_session_token(token)
@@ -143,5 +162,10 @@ async def require_any_auth(
                 user = result.scalar_one_or_none()
                 if user:
                     return AuthContext(ui_user=user)
+
+    # Lokaler Desktop-Modus: ohne jede Auth auf den lokalen Admin zurückfallen.
+    local = await _local_admin()
+    if local:
+        return AuthContext(ui_user=local)
 
     raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Authentication required")

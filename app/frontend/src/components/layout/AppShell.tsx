@@ -9,7 +9,17 @@ interface AppShellProps {
 }
 
 export default function AppShell({ title, sub }: AppShellProps) {
-  const { isLoggedIn } = useAuth();
+  const { isLoggedIn, ready } = useAuth();
+
+  // Warten, bis der lokale Auto-Login-Check (/api/auth/me) durch ist — sonst
+  // blitzt die Login-Seite kurz auf, bevor die lokale Session steht.
+  if (!ready) {
+    return (
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100vh', fontSize: 13, color: '#a3a3a3', background: '#fafafa' }}>
+        Lädt…
+      </div>
+    );
+  }
 
   if (!isLoggedIn) {
     return <Navigate to="/login" replace />;
