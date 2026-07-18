@@ -1,13 +1,15 @@
 """
-Folder-Watcher — überwacht optional einen Ordner im Dateisystem und
-indexiert automatisch neue Dateien.
+Folder-Watcher — überwacht den lokalen Überwachungsordner (`settings().upload_dir`)
+und indexiert neue Dateien automatisch.
 
-Die Zuordnung zu Ordnerpfad wird aus dem Dateipfad abgeleitet:
+Ordnerpfad wird aus dem Dateipfad abgeleitet:
 
-    /data/uploads/<folder_path>/<file_name>
+    <upload_dir>/<folder_path>/<file_name>
 
-So kann man per rclone ein OneDrive-Verzeichnis nach /data/uploads/...
-syncen und es wird automatisch indexiert.
+**PollingObserver** (nicht der native Observer): watchdog-Events sind über SMB/
+Netzlaufwerke unzuverlässig, und der Vault kann auf der NAS liegen. Polling ist
+etwas träger, aber robust — lokal wie über SMB. Der LanceDB-Store serialisiert
+gleichzeitige Writes (Watcher + Queue-Worker) über seinen Lock → Single-Writer bleibt.
 """
 from __future__ import annotations
 
@@ -15,7 +17,7 @@ import asyncio
 from pathlib import Path
 
 from watchdog.events import FileSystemEvent, FileSystemEventHandler
-from watchdog.observers import Observer
+from watchdog.observers.polling import PollingObserver
 
 from config import settings
 from ingest.pipeline import ingest_file
@@ -76,15 +78,15 @@ async def _process(path: Path) -> None:
 
 
 class FolderWatcher:
-    """Startet einen Hintergrund-Observer, der settings.upload_dir beobachtet."""
+    """Startet einen Hintergrund-PollingObserver, der settings.upload_dir beobachtet."""
 
     def __init__(self) -> None:
-        self._observer: Observer | None = None
+        self._observer: PollingObserver | None = None
 
     def start(self) -> None:
         # get_running_loop() statt get_event_loop() — vermeidet DeprecationWarning
         loop = asyncio.get_running_loop()
-        observer = Observer()
+        observer = PollingObserver()
         observer.schedule(_Handler(loop), str(settings().upload_dir), recursive=True)
         observer.start()
         self._observer = observer
