@@ -1,0 +1,66 @@
+[project]
+name = "sima-rag"
+version = "0.1.0"
+description = "Self-hosted RAG backend with MCP server"
+requires-python = ">=3.12"
+dependencies = [
+    # Web-Framework
+    "fastapi>=0.115",
+    "uvicorn[standard]>=0.32",
+    "python-multipart>=0.0.17",
+    "httpx>=0.27",
+
+    # Config & Logging
+    "pydantic>=2.9",
+    "pydantic-settings>=2.6",
+    "structlog>=24.4",
+
+    # Datenbank
+    "sqlalchemy[asyncio]>=2.0",
+    "asyncpg>=0.30",
+
+    # Auth
+    "bcrypt>=4.2",
+    "python-jose[cryptography]>=3.3",
+
+    # RAG / Pipeline
+    "haystack-ai>=2.8",
+    "qdrant-haystack>=7.0",
+    "ollama-haystack>=2.1",
+    "fastembed-haystack>=1.4",       # BM25-Sparse-Vektoren für Hybrid-Suche
+
+    # Parser
+    "pymupdf>=1.24",                 # PDF
+    "python-docx>=1.1",              # DOCX
+    "openpyxl>=3.1",                 # XLSX
+    "beautifulsoup4>=4.12",          # HTML
+    "python-magic>=0.4",             # MIME-Detection
+    "ocrmypdf>=16.0",                # OCR für gescannte PDFs
+    "fpdf2>=2.7",                    # PDF-Export aus Text (Welle 5)
+
+    # Reranker (Welle 6 → M1.3: torch-frei via ONNX-Runtime)
+    "onnxruntime>=1.19",             # INT8-ONNX-Inferenz (bge-reranker-v2-m3), CPU
+    "transformers>=4.44",            # nur AutoTokenizer (kein torch nötig)
+    "numpy>=1.26",
+
+    # Datei-Überwachung
+    "watchdog>=6.0",
+
+    # Wissensgraph (Track D): Louvain-Community-Detection. PageRank läuft bewusst
+    # als eigene numpy-Power-Iteration (kein scipy → Slim-Image bleibt schlank).
+    "networkx>=3.2",
+
+    # MCP
+    "mcp>=1.1",
+]
+
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+include = ["api*", "auth*", "backup*", "db*", "export*", "graph*", "ingest*", "maintenance*", "mcp_server*", "pipelines*", "services*"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"

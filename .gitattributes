@@ -1,0 +1,22 @@
+# Erzwingt LF auf allen wichtigen Dateien — egal ob sie unter Windows
+# oder Linux committet werden. Verhindert, dass Shell-Skripte als CRLF
+# auf dem VPS landen (wo bash sie dann nicht ausführt).
+
+* text=auto eol=lf
+
+# Explizit LF für Infrastruktur
+*.sh         text eol=lf
+*.py         text eol=lf
+*.yml        text eol=lf
+*.yaml       text eol=lf
+*.toml       text eol=lf
+*.md         text eol=lf
+*.conf       text eol=lf
+Dockerfile   text eol=lf
+Makefile     text eol=lf
+Caddyfile    text eol=lf
+
+# Binaries (nicht angreifen)
+*.png binary
+*.jpg binary
+*.pdf binary

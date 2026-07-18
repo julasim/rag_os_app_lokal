@@ -1,0 +1,92 @@
+# =============================================================================
+# Override: Docling-Backend + Worker-Split (Track C3a/C3b).
+#
+#   docker compose -f docker-compose.yml -f docker-compose.docling.yml up -d --build
+#
+# Zwei-Container-Modell:
+#   - api        : nur die HTTP-API (SERVICE_ROLE=api) — ingestet NICHT mehr selbst.
+#   - rag-ingest : eigener Worker-Container (SERVICE_ROLE=ingest, Entrypoint
+#                  worker.py) — Queue-Worker + Folder-Watcher, trägt die schwere
+#                  Docling/torch-Last. Nur am internen rag-net, NIE am proxy-Netz.
+#
+# Split (C3b-W3): api erbt das SLIM `sima-rag-api:latest` (torch-frei, ONNX-Reranker)
+# aus der Base-Compose; rag-ingest baut das FETTE `rag-ingest:latest`
+# (FROM sima-rag-api:latest + torch/torchvision/docling + gebackene Modelle).
+#
+# ZWEISTUFIGER Build zwingend (rag-ingest ist FROM sima-rag-api:latest — die slim-api
+# MUSS zuerst gebaut+getaggt sein, sonst scheitert der FROM):
+#   docker compose build api \
+#     && docker compose -f docker-compose.yml -f docker-compose.docling.yml build rag-ingest \
+#     && docker compose -f docker-compose.yml -f docker-compose.docling.yml up -d
+# =============================================================================
+services:
+  # Erbt das slim sima-rag-api:latest aus der Base-Compose. Ingestet NICHT
+  # (SERVICE_ROLE=api) → kein docling/torch im Serving-Image nötig.
+  api:
+    environment:
+      SERVICE_ROLE: api            # API ingestet nicht mehr — das macht rag-ingest
+
+  rag-ingest:
+    build:
+      context: .
+      dockerfile: app/Dockerfile.ingest   # FROM sima-rag-api:latest → erst `build api`!
+    image: rag-ingest:latest
+    container_name: rag-ingest
+    command: ["python", "worker.py"]
+    restart: unless-stopped
+    environment:
+      # Database
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: 5432
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      # Qdrant
+      QDRANT_HOST: qdrant
+      QDRANT_PORT: 6333
+      QDRANT_API_KEY: ${QDRANT_API_KEY}
+      # Ollama
+      OLLAMA_HOST: http://ollama:11434
+      EMBED_MODEL: bge-m3
+      LLM_MODEL: qwen2.5:3b-instruct
+      # App (settings() verlangt diese Felder — auch der Worker lädt Settings)
+      APP_SECRET_KEY: ${APP_SECRET_KEY}
+      ADMIN_EMAIL: ${ADMIN_EMAIL}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD}
+      UPLOAD_DIR: /data/uploads
+      LOG_LEVEL: INFO
+      RAG_DOMAIN: ${RAG_DOMAIN}
+      # bge-m3-Tokenizer (HybridChunker) ist ins Image gebacken (M1.3) → HF_HOME
+      # auf den gebackenen Cache, damit offline=True ihn findet.
+      HF_HOME: /opt/models/huggingface
+      SENTENCE_TRANSFORMERS_HOME: /opt/models/huggingface
+      FASTEMBED_CACHE_PATH: /opt/models/fastembed   # BM25 gebacken (W1) — air-gapped
+      # Ingest/Worker
+      INGEST_BACKEND: docling
+      DOCLING_ARTIFACTS_PATH: /opt/models/docling   # gebacken (M1.3)
+      SERVICE_ROLE: ingest
+      # Air-gapped: Offline-Flags MÜSSEN vor Prozessstart im Env stehen (nicht erst
+      # zur Laufzeit via IngestConfig.apply_offline_env) — transformers/huggingface_hub
+      # cachen das Flag beim Import. Zu spät gesetzt → bge-m3 versucht Netz-Zugriff →
+      # Fallback auf ungebacktes all-MiniLM → Crash. Nur beim Worker, NICHT bei api
+      # (die lädt BM25 online in den /models-Mount).
+      HF_HUB_OFFLINE: "1"
+      TRANSFORMERS_OFFLINE: "1"
+    volumes:
+      - ./data/uploads:/data/uploads   # geteilt mit api: Upload-Quelle + Watcher
+      - ./data/staging:/data/staging   # geteilt mit api: Async-Upload-Staging (Track C3b)
+      - ./data/models:/models          # Docling-/HF-/fastembed-Modelle (uid 1000)
+    networks:
+      - rag-net                        # NUR intern — kein proxy-Netz
+    depends_on:
+      postgres:
+        condition: service_healthy
+      qdrant:
+        condition: service_healthy
+      ollama:
+        condition: service_healthy
+    deploy:
+      resources:
+        limits:
+          cpus: "2.0"
+          memory: 6g                   # Docling-Peak (Parsing tabellenlastiger PDFs)

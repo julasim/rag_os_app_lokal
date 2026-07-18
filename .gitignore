@@ -1,0 +1,52 @@
+# Secrets
+.env
+*.env.local
+
+# Daten
+/data/
+/backups/
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# React-Build-Output (wird vom Docker-Build generiert, nicht ins Repo)
+app/ui_static/
+
+# Node
+app/frontend/node_modules/
+app/frontend/dist/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+
+# Claude Code (lokale Tooling-Ordner, nicht fürs Repo)
+.claude/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# --- Lokaler nativer Umbau (rag-os-app-lokal) ---
+# Vault-Index/Cache (LanceDB + corpus.sqlite Snapshots), lokale App-DBs
+.ragos/
+*.sqlite
+*.sqlite-wal
+*.sqlite-shm
+*.db
+# Test-Vault / lokale Daten
+/vault/
+# PyInstaller / Inno-Setup Build-Artefakte
+/build/
+/dist/
+/installer_output/
+# Modell-/HF-Caches, falls lokal abgelegt
+/models/

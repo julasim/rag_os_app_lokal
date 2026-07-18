@@ -1,0 +1,59 @@
+# ==============================================================================
+# Caddy-Konfiguration für das SIMA RAG-System
+#
+# Caddy kümmert sich um:
+#   - HTTPS (automatisch via Let's Encrypt)
+#   - Reverse Proxy auf die zwei App-Ports
+#   - HTTP→HTTPS Redirect
+#
+# Das API-Container-Innere bietet:
+#   :8000  — FastAPI (REST unter /api/*, MCP unter /mcp/*, plus das
+#            React-Admin-Frontend als SPA für alle übrigen Pfade)
+#
+# Wir nutzen `handle` (NICHT `handle_path`), damit der Präfix beim
+# Weiterreichen an FastAPI erhalten bleibt — sonst landen die Routen
+# ohne /api-Präfix und FastAPI liefert 404.
+# ==============================================================================
+
+{$RAG_DOMAIN} {
+
+	# Sicherheits-Header für alle Responses
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		X-Content-Type-Options "nosniff"
+		X-Frame-Options "DENY"
+		Referrer-Policy "strict-origin-when-cross-origin"
+	}
+
+	# ------------------------------------------------------------------
+	# REST-API — Präfix /api bleibt erhalten
+	# ------------------------------------------------------------------
+	handle /api/* {
+		reverse_proxy api:8000
+	}
+
+	# ------------------------------------------------------------------
+	# MCP-Endpunkt — auch :8000, weil MCP via app.mount("/mcp", …)
+	# innerhalb FastAPI läuft. Präfix bleibt erhalten.
+	# ------------------------------------------------------------------
+	handle /mcp/* {
+		reverse_proxy api:8000
+	}
+
+	# ------------------------------------------------------------------
+	# React-Admin-Frontend (von FastAPI als SPA serviert) — alles, was
+	# nicht /api oder /mcp ist. Läuft auf :8000 (kein Streamlit mehr).
+	# ------------------------------------------------------------------
+	handle {
+		reverse_proxy api:8000 {
+			header_up Host {host}
+			header_up X-Real-IP {remote}
+		}
+	}
+
+	# Logging strukturiert in stdout → landet in Docker-Logs
+	log {
+		output stdout
+		format json
+	}
+}

@@ -1,0 +1,29 @@
+# =============================================================================
+# SIMA RAG — Local-Dev Override
+#
+# Verwendung: lokale Entwicklung ohne Edge-Caddy, mit Live-Code-Reload.
+#
+#   docker compose -f docker-compose.yml -f docker-compose.localonly.yml up -d
+#
+# Effekt:
+#   - ./app:/app Live-Mount → Python-Edits sofort wirksam (uvicorn --reload)
+#   - API auf 127.0.0.1:8000 erreichbar (SSH-Tunnel oder direkt lokal)
+#   - Kein Edge-Caddy nötig
+#
+# Hinweis: React-UI wird im Dev-Modus separat gestartet:
+#   cd frontend && npm run dev    (läuft auf :3000, proxied /api/* auf :8000)
+# =============================================================================
+
+services:
+
+  api:
+    volumes:
+      - ./app:/app                    # Live-Mount: Python-Edits sofort wirksam
+    ports:
+      - "127.0.0.1:8000:8000"
+
+  # Hinweis: KEIN rag-ingest-Override hier — der Service ist nur in
+  # docker-compose.docling.yml definiert. Ein Fragment an dieser Stelle würde
+  # `-f docker-compose.yml -f docker-compose.localonly.yml` OHNE docling zu einem
+  # ungültigen Compose-Projekt machen ("rag-ingest has neither image nor build").
+  # Für Live-Worker-Code im Docling-Modus: Image neu bauen (make rebuild-Muster).
