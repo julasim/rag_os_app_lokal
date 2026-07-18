@@ -2,33 +2,32 @@
 MCP-Server via Streamable-HTTP.
 
 Wird von FastAPI auf /mcp gemountet. Jeder Request muss einen gültigen
-API-Key im Authorization-Header mitbringen. Die allowed_folders-Liste des
-Keys bestimmt, welche Ordner sichtbar sind (leere Liste = alles).
+Bearer-API-Key im Authorization-Header mitbringen. Die allowed_folders-Liste
+des Keys bestimmt, welche Ordner sichtbar sind (leere Liste = alles).
 
-Tools:
-  - rag_retrieve
-  - rag_list_documents
-  - rag_get_document
-  - rag_upload        (nur MCP-Admin; Write-Härtung/TOTP siehe Track E5)
-  - rag_stats
+Lokale Variante: **Bearer-only** (kein OAuth), **read-only** — Upload/Löschen
+laufen über die lokale Verwaltungs-UI bzw. den Überwachungsordner (Single-Writer),
+nicht über MCP.
 
-Löschen gibt es bewusst NICHT über MCP (Track E) — nur über die Web-UI (Admin).
+Tools (alle read-only):
+  - rag_overview       kompakte Bestands-Karte (zuerst laden, dann drillen)
+  - rag_retrieve       Hybrid-Suche → Chunks (der Such-Endpunkt)
+  - norm_lookup        Norm exakt über norm_id finden
+  - rag_list_documents Dokumentliste (optional Ordner)
+  - rag_get_document   Metadaten + Volltext eines Dokuments
+  - rag_stats          globale Zahlen
 """
 from __future__ import annotations
 
-import hashlib
-import shutil
 from contextvars import ContextVar
-from pathlib import Path
 from typing import Any
-from uuid import UUID, uuid4
+from uuid import UUID
 
 from mcp.server.fastmcp import FastMCP
 from sqlalchemy import func, select
 from starlette.requests import Request
 from starlette.responses import JSONResponse
 
-from auth import totp
 from auth.folders import (
     accessible_folder_paths,
     key_allows_folder,
@@ -36,79 +35,15 @@ from auth.folders import (
     user_allows_folder,
 )
 from auth.keys import verify_api_key
-from config import settings
-from db.models import ApiKey, Document, DocumentStatus, UiUser, UserRole
+from db.models import ApiKey, Document, DocumentChunk, DocumentStatus
 from db.session import get_session
-from ingest.queue import enqueue_files
-from logger import log
-from mcp_server import audit, oauth
+from graph.canonical import canonical_norm_id
+from mcp_server import audit
 from pipelines.query import run_retrieve
 
 
 # Aktiver API-Key des laufenden Requests (Middleware setzt ihn).
 _current_key: ContextVar[ApiKey | None] = ContextVar("current_key", default=None)
-
-
-# ---------------------------------------------------------------------------
-# OAuth-Key-Stellvertreter (Modulebene, damit MCPAuthMiddleware darauf zugreifen kann)
-# ---------------------------------------------------------------------------
-class _OAuthPrincipal:
-    """
-    Synthetischer „Key" für OAuth-authentifizierte Requests, gebaut aus dem
-    echten UiUser hinter dem Token. Duck-typed das ApiKey-Interface, das die
-    MCP-Tools nutzen (`id`/`scopes`/`allowed_folders`), trägt zusätzlich die
-    **echte Rolle + per-User-ACL** (Track E).
-
-    Semantik (fail-safe):
-      - `role` + `access_all` + `allowed_folders` stammen 1:1 aus dem UiUser.
-      - `scopes` aus der Rolle abgeleitet: Admin → read+write (Löschen NIE über
-        MCP), normaler User → nur read. Kein Principal bekommt hier `delete`.
-      - `access_all` markiert diesen Principal als User-Pfad (vs. Bearer-Key,
-        der kein `access_all`-Attribut trägt) — die MCP-Tools verzweigen darüber.
-      - `id = None` → `QueryLog.api_key_id` bleibt None; die Identität trägt
-        `user_id` (kein FK-Bruch, ist kein API-Key).
-    """
-    def __init__(
-        self,
-        user_id: str,
-        email: str,
-        role: str,
-        access_all: bool,
-        allowed_folders: list[str],
-    ) -> None:
-        self.id = None
-        self.user_id = user_id
-        self.email = email
-        self.role = role
-        self.access_all = access_all
-        self.allowed_folders = list(allowed_folders or [])
-        self.scopes = (
-            ["read", "write"] if role == UserRole.ADMIN.value else ["read"]
-        )
-
-
-async def _resolve_oauth_principal(claims: dict) -> "_OAuthPrincipal | None":
-    """Löst den Token-`sub` frisch zum lebenden UiUser auf (De-facto-Revocation).
-
-    Rolle + ACL werden bei JEDEM Request frisch geladen → eine Rechte-Änderung
-    (oder Löschung) des Users greift sofort.
-    """
-    sub = claims.get("sub")
-    try:
-        uid = UUID(str(sub))
-    except (ValueError, TypeError):
-        return None
-    async with get_session() as s:
-        user = (await s.execute(select(UiUser).where(UiUser.id == uid))).scalar_one_or_none()
-    if not user:
-        return None
-    return _OAuthPrincipal(
-        user_id=str(user.id),
-        email=user.email,
-        role=user.role,
-        access_all=user.access_all,
-        allowed_folders=list(user.allowed_folders or []),
-    )
 
 
 def _key() -> ApiKey:
@@ -136,55 +71,15 @@ def _require_scope(scope: str) -> None:
         raise PermissionError(f"API key missing scope '{scope}'")
 
 
-async def _require_mcp_admin_totp(
-    totp_code: str | None, file_path: str, folder_path: str, tags: list[str]
-) -> None:
-    """
-    Track E5 — MCP-Write nur für den EINEN designierten MCP-Admin MIT gültigem,
-    single-use TOTP. `write`-Scope allein genügt NICHT (sonst Bearer-Bypass):
-
-      1. Principal muss der OAuth-User `settings().resolved_mcp_admin_email`
-         (Rolle admin) sein — ein Bearer-Key hat weder `email` noch `user_id`
-         und fällt hier immer durch.
-      2. Für ihn muss TOTP eingerichtet (`totp_enabled`) sein.
-      3. Der Code muss gültig, nicht verbraucht und das Konto nicht gesperrt sein
-         (harter Lockout nach 5 Fehlversuchen).
-
-    Der Erfolg wird an die konkrete Aktion (file/folder/tags) audit-gebunden.
-    """
+async def _accessible_paths(s, folder: str | None = None):
+    """Erlaubte Ordnerpfade (inkl. Unterordner) des aktiven Keys. None = alles,
+    [] = nichts. Bearer vs. User/OAuth über das `access_all`-Duck-Typing."""
     k = _key()
-    email = getattr(k, "email", None)
-    uid = getattr(k, "user_id", None)
-    role = getattr(k, "role", None)
-    if (
-        email is None
-        or uid is None
-        or role != UserRole.ADMIN.value
-        or email.lower() != settings().resolved_mcp_admin_email.lower()
-    ):
-        raise PermissionError("rag_upload ist nur dem MCP-Admin erlaubt")
-    if not totp_code:
-        raise PermissionError("TOTP-Code erforderlich (zweiter Faktor für MCP-Write)")
-    if totp.is_locked(uid):
-        raise PermissionError("Konto wegen zu vieler TOTP-Fehlversuche gesperrt")
-
-    async with get_session() as s:
-        row = (
-            await s.execute(
-                select(UiUser.totp_secret, UiUser.totp_enabled).where(
-                    UiUser.id == UUID(uid)
-                )
-            )
-        ).first()
-    if not row or not row.totp_enabled or not row.totp_secret:
-        raise PermissionError("Für den MCP-Admin ist kein TOTP eingerichtet")
-    if not totp.check_and_consume(uid, row.totp_secret, str(totp_code)):
-        raise PermissionError("TOTP ungültig, bereits verbraucht oder Konto gesperrt")
-
-    action_hash = hashlib.sha256(
-        f"{file_path}|{folder_path}|{','.join(sorted(tags))}".encode()
-    ).hexdigest()[:16]
-    log.info("mcp.upload.totp_ok", user=email, action_hash=action_hash)
+    aa = getattr(k, "access_all", None)
+    af = getattr(k, "allowed_folders", None)
+    if aa is None:
+        return await accessible_folder_paths(af, folder, s)
+    return await user_accessible_folder_paths(aa, af, folder, s)
 
 
 # ---------------------------------------------------------------------------
@@ -304,17 +199,28 @@ def build_mcp_app() -> FastMCP:
 
     # --- rag_get_document ----------------------------------------------------
     @mcp.tool(annotations={"readOnlyHint": True, "openWorldHint": False})
-    async def rag_get_document(doc_id: str) -> dict[str, Any]:
-        """Hole Metadaten eines einzelnen Dokuments."""
+    async def rag_get_document(doc_id: str, include_text: bool = True) -> dict[str, Any]:
+        """Hole Metadaten — und optional den **Volltext** — eines Dokuments.
+
+        Der Volltext wird aus den kanonischen Child-Chunks (in Ingest-Reihenfolge)
+        rekonstruiert — verbatim, ohne LLM-Paraphrase. Setze `include_text=False`
+        für nur Metadaten (z.B. große Dokumente)."""
         _require_scope("read")
         async with get_session() as s:
-            result = await s.execute(
+            d = (await s.execute(
                 select(Document).where(Document.id == UUID(doc_id))
-            )
-            d = result.scalar_one_or_none()
-        if not d:
-            return {"error": "not_found"}
-        _require_folder(d.folder_path)
+            )).scalar_one_or_none()
+            if not d:
+                return {"error": "not_found"}
+            _require_folder(d.folder_path)
+            full_text = None
+            if include_text:
+                rows = (await s.execute(
+                    select(DocumentChunk.text)
+                    .where(DocumentChunk.doc_id == d.id, DocumentChunk.level == "child")
+                    .order_by(DocumentChunk.ordinal)
+                )).scalars().all()
+                full_text = "\n\n".join(t for t in rows if t and t.strip())
         return {
             "id": str(d.id),
             "folder_path": d.folder_path,
@@ -324,71 +230,90 @@ def build_mcp_app() -> FastMCP:
             "tags": list(d.tags or []),
             "status": d.status,
             "chunk_count": d.chunk_count,
+            "doc_type": d.doc_type,
+            "norm_id": d.norm_id,
+            "doc_version": d.doc_version,
+            "valid_status": d.valid_status,
             "uploaded_at": d.uploaded_at.isoformat(),
             "indexed_at": d.indexed_at.isoformat() if d.indexed_at else None,
+            "full_text": full_text,
         }
 
-    # --- rag_upload ---------------------------------------------------------
-    @mcp.tool(annotations={"readOnlyHint": False, "destructiveHint": False, "idempotentHint": False, "openWorldHint": False})
-    async def rag_upload(
-        file_path: str,
-        folder_path: str = "/",
-        tags: list[str] | None = None,
-        totp_code: str | None = None,
-    ) -> dict[str, Any]:
+    # --- rag_overview --------------------------------------------------------
+    @mcp.tool(annotations={"readOnlyHint": True, "openWorldHint": False})
+    async def rag_overview() -> dict[str, Any]:
+        """Kompakte Bestands-Karte der Dokumenten-Sammlung — **zuerst aufrufen**,
+        um dich zu orientieren, dann gezielt mit `rag_retrieve` / `norm_lookup`
+        drillen. Zeigt Ordner (mit Doc-Zahlen), Norm-Abdeckung (Top-norm_ids) und
+        die häufigsten Tags — ACL-beschränkt auf die für deinen Key sichtbaren Ordner.
         """
-        Reiht eine Datei vom lokalen Dateisystem des Servers zur Indexierung ein.
-        Achtung: Pfad muss im Container erreichbar sein (typ. /data/uploads/…).
+        from collections import Counter
 
-        Schreibende Aktion — nur der designierte MCP-Admin darf sie ausführen und
-        MUSS als zweiten Faktor `totp_code` (6-stelliger Code aus seiner
-        Authenticator-App) mitgeben. Der Code ist einmalig verwendbar; nach
-        mehreren Fehlversuchen wird das Konto vorübergehend gesperrt.
+        _require_scope("read")
+        async with get_session() as s:
+            paths = await _accessible_paths(s)
+            stmt = select(Document).where(Document.status == DocumentStatus.INDEXED.value)
+            if paths is not None:
+                if not paths:
+                    return {"total_documents": 0, "total_chunks": 0,
+                            "folders": [], "top_norms": [], "top_tags": []}
+                stmt = stmt.where(Document.folder_path.in_(paths))
+            docs = (await s.execute(stmt)).scalars().all()
 
-        Der Ingest läuft ASYNCHRON: die Datei wird ins geteilte Staging-Volume
-        kopiert (Original bleibt erhalten) und in die Ingest-Queue gestellt; der
-        separate rag-ingest-Worker verarbeitet sie. Rückgabe ist die `job_id` —
-        der Fortschritt lässt sich (REST) über GET /api/documents/jobs/{job_id}
-        verfolgen.
+        folders = Counter(d.folder_path for d in docs)
+        norms = Counter(d.norm_id for d in docs if d.norm_id)
+        tags = Counter(t for d in docs for t in (d.tags or []))
+        return {
+            "total_documents": len(docs),
+            "total_chunks": sum(d.chunk_count or 0 for d in docs),
+            "folders": [{"folder": f, "documents": n} for f, n in sorted(folders.items())],
+            "top_norms": [{"norm_id": nm, "documents": n} for nm, n in norms.most_common(20)],
+            "top_tags": [{"tag": t, "count": n} for t, n in tags.most_common(20)],
+        }
 
-        Args:
-            file_path: Serverpfad der Datei (z.B. /data/uploads/x.pdf).
-            folder_path: Zielordner in der Sammlung.
-            tags: optionale Tags.
-            totp_code: aktueller 6-stelliger TOTP-Code des MCP-Admins (Pflicht).
-        """
-        _require_scope("write")
-        _require_folder(folder_path)
-        await _require_mcp_admin_totp(totp_code, file_path, folder_path, tags or [])
-        p = Path(file_path)
-        if not p.exists():
-            return {"error": "file_not_found", "path": str(p)}
+    # --- norm_lookup ---------------------------------------------------------
+    @mcp.tool(annotations={"readOnlyHint": True, "openWorldHint": False})
+    async def norm_lookup(norm_id: str, only_current: bool = False) -> dict[str, Any]:
+        """Findet alle Dokumente zu einer Norm über die **kanonische** norm_id
+        (z.B. "ÖNORM B 1801-1", "EN 1992", "DIN 276"). Kanonisierung trennt
+        Geschwister-Normen sauber (…-1 ≠ …-2) und egalisiert Schreibvarianten.
 
-        # Track C3b: kein synchroner Ingest mehr im api-Prozess. Quelle worker-
-        # lesbar ins geteilte Staging-Volume KOPIEREN (shutil.copy2 → Original
-        # bleibt, entspricht dem bisherigen keep_source=True) und asynchron
-        # einreihen. Der Worker räumt die Staging-Kopie nach dem Ingest weg.
-        staging = settings().staging_dir
-        staging.mkdir(parents=True, exist_ok=True)
-        staged = staging / f"{uuid4().hex}_{p.name}"
-        shutil.copy2(p, staged)
+        `only_current=True` blendet abgelöste Fassungen aus. Ergebnis nennt je
+        Treffer `valid_status`/`superseded_by`, damit du auf die gültige Fassung
+        verweisen kannst."""
+        _require_scope("read")
+        target, _version = canonical_norm_id(norm_id)
+        if not target:
+            return {"norm_id": norm_id, "canonical": None, "matches": []}
+        async with get_session() as s:
+            paths = await _accessible_paths(s)
+            stmt = select(Document).where(Document.norm_id.isnot(None))
+            if paths is not None:
+                if not paths:
+                    return {"norm_id": norm_id, "canonical": target, "matches": []}
+                stmt = stmt.where(Document.folder_path.in_(paths))
+            docs = (await s.execute(stmt)).scalars().all()
 
-        job_id = uuid4()
-        user_id = getattr(_key(), "user_id", None)
-        await enqueue_files(
-            job_id=job_id,
-            folder_path=folder_path,
-            files=[(staged, p.name)],
-            tags=tags or [],
-            uploaded_by=UUID(user_id) if user_id else None,
-        )
-        return {"job_id": str(job_id), "status": "queued"}
+        matches = []
+        for d in docs:
+            key, _v = canonical_norm_id(d.norm_id or "")
+            if key != target:
+                continue
+            if only_current and d.valid_status == "superseded":
+                continue
+            matches.append({
+                "doc_id": str(d.id),
+                "file_name": d.file_name,
+                "folder_path": d.folder_path,
+                "norm_id": d.norm_id,
+                "doc_version": d.doc_version,
+                "valid_status": d.valid_status,
+                "superseded_by": str(d.superseded_by) if d.superseded_by else None,
+            })
+        return {"norm_id": norm_id, "canonical": target, "matches": matches}
 
-    # rag_delete_document wurde ENTFERNT (Track E, Sicherheitsmodell):
-    # Löschen ist ausschließlich über die Web-UI möglich (`require_ui_admin`),
-    # NIE über MCP — auch nicht für Admins oder Bearer-Keys mit delete-Scope.
-    # So kann ein kompromittierter/über-berechtigter MCP-Client keine Dokumente
-    # (DSGVO-relevant) löschen.
+    # Kein rag_upload/rag_delete über MCP: MCP ist read-only. Schreiben läuft
+    # lokal (Verwaltungs-UI / Überwachungsordner, Single-Writer).
 
     # --- rag_stats -----------------------------------------------------------
     @mcp.tool(annotations={"readOnlyHint": True, "openWorldHint": False})
@@ -428,9 +353,7 @@ class MCPAuthMiddleware:
     Kein BaseHTTPMiddleware — leitet `send` direkt durch, sodass FastMCP's
     SSE-Streaming ungepuffert zum Client fließt.
 
-    Dual-Auth-Reihenfolge:
-      1. OAuth-JWT (wenn OAUTH_JWT_SECRET gesetzt)
-      2. Bearer-API-Key aus der DB
+    Auth: **Bearer-API-Key** aus der DB (lokale Variante — kein OAuth).
     """
 
     def __init__(self, app: Any) -> None:
@@ -455,24 +378,7 @@ class MCPAuthMiddleware:
 
         token = auth.split(" ", 1)[1].strip()
 
-        # 1. Versuch: OAuth-JWT → frisch zum UiUser auflösen
-        if oauth.is_enabled():
-            claims = oauth.verify_access_token(token)
-            if claims:
-                principal = await _resolve_oauth_principal(claims)
-                if principal is None:
-                    # Gültiger Token, aber User existiert nicht mehr → 401.
-                    resp = JSONResponse({"error": "invalid_token"}, status_code=401)
-                    await resp(scope, receive, send)
-                    return
-                tok = _current_key.set(principal)  # type: ignore[arg-type]
-                try:
-                    await self._app(scope, receive, send)
-                finally:
-                    _current_key.reset(tok)
-                return
-
-        # 2. Versuch: statischer Bearer-API-Key
+        # Statischer Bearer-API-Key
         key = await verify_api_key(token)
         if not key:
             resp = JSONResponse({"error": "invalid_api_key"}, status_code=401)
