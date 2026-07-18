@@ -38,7 +38,6 @@ class UserAdminResponse(BaseModel):
     role: str
     access_all: bool
     allowed_folders: list[str]
-    totp_enabled: bool
     created_at: datetime
     last_login: datetime | None
 
@@ -68,7 +67,6 @@ def _to_resp(u: UiUser) -> UserAdminResponse:
         role=u.role,
         access_all=u.access_all,
         allowed_folders=list(u.allowed_folders or []),
-        totp_enabled=bool(u.totp_enabled),
         created_at=u.created_at,
         last_login=u.last_login,
     )

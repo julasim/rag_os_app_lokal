@@ -82,12 +82,6 @@ class UiUser(Base):
         JSON, nullable=False, default=list
     )
 
-    # --- TOTP (Track E5: MCP-Admin-Write) ---
-    totp_secret: Mapped[str | None] = mapped_column(Text)
-    totp_enabled: Mapped[bool] = mapped_column(
-        Boolean, nullable=False, default=False
-    )
-
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )
@@ -404,49 +398,6 @@ class QueryLog(Base):
     model: Mapped[str | None] = mapped_column(String(128))
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
-    )
-
-
-# ---------------------------------------------------------------------------
-# OAuth (MCP-Connector) — Clients (DCR) + Refresh-Tokens
-#
-# Ersetzt die frühere SQLite-DB unter /data/mcp-oauth.db (lag auf einem NICHT
-# gemounteten Pfad → nach jedem Redeploy weg). Jetzt in Postgres: überlebt
-# Redeploys, im pg_dump-Backup. Auth-Codes bleiben kurzlebig in-memory.
-# ---------------------------------------------------------------------------
-class OAuthClient(Base):
-    __tablename__ = "oauth_clients"
-
-    client_id: Mapped[str] = mapped_column(String(64), primary_key=True)
-    redirect_uris: Mapped[list[str]] = mapped_column(
-        JSON, nullable=False, default=list
-    )
-    token_endpoint_auth_method: Mapped[str] = mapped_column(
-        String(32), nullable=False, default="none"
-    )
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now()
-    )
-    last_used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
-
-
-class OAuthRefreshToken(Base):
-    __tablename__ = "oauth_refresh_tokens"
-
-    token_id: Mapped[str] = mapped_column(String(96), primary_key=True)
-    client_id: Mapped[str] = mapped_column(String(64), nullable=False)
-    subject: Mapped[str] = mapped_column(String(64), nullable=False)  # UiUser-UUID als Text
-    scope: Mapped[str] = mapped_column(String(255), nullable=False, default="")
-    issued_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now()
-    )
-    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
-    revoked: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
-    replaced_by: Mapped[str | None] = mapped_column(String(96))
-
-    __table_args__ = (
-        Index("idx_oauth_refresh_subject", "subject"),
-        Index("idx_oauth_refresh_expires", "expires_at"),
     )
 
 

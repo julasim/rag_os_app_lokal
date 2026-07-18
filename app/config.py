@@ -63,7 +63,6 @@ class Settings(BaseSettings):
     app_secret_key: str = "local-rag-os-secret"   # lokal; OAuth ist ohnehin aus
     admin_email: str = "admin@local"
     admin_password: str = "changeme"
-    mcp_admin_email: str | None = None            # entfällt mit M8 (rag_upload weg)
     upload_dir: Path = _DEFAULT_VAULT / "Dokumente"
     staging_dir: Path = _APPDATA / "staging"
     backup_dir: Path = _APPDATA / "backups"
@@ -110,16 +109,6 @@ class Settings(BaseSettings):
     def runs_ingest_worker(self) -> bool:
         return self.service_role == "all"
 
-    # --- OAuth: lokal AUS (Bearer-Key genügt) ---
-    oauth_enabled: bool = False
-    oauth_jwt_secret: str | None = None
-    oauth_access_ttl: int = 900
-    oauth_refresh_ttl: int = 259200
-
-    @property
-    def resolved_mcp_admin_email(self) -> str:
-        return self.mcp_admin_email or self.admin_email
-
     # --- Lokale Speicher-Pfade (abgeleitet) ---
     @property
     def ragos_dir(self) -> Path:
@@ -162,23 +151,6 @@ class Settings(BaseSettings):
     @property
     def qdrant_url(self) -> str:
         return f"http://{self.qdrant_host}:{self.qdrant_port}"
-
-    # --- OAuth abgeleitet ---
-    @property
-    def oauth_secret(self) -> str:
-        return self.oauth_jwt_secret or self.app_secret_key
-
-    @property
-    def oauth_issuer(self) -> str:
-        return f"https://{self.rag_domain}"
-
-    @property
-    def oauth_resource(self) -> str:
-        return f"https://{self.rag_domain}/mcp"
-
-    @property
-    def oauth_active(self) -> bool:
-        return self.oauth_enabled and bool(self.oauth_secret)
 
 
 @lru_cache

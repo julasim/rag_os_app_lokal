@@ -34,8 +34,6 @@ from ingest.queue import queue_worker_loop
 from ingest.watcher import FolderWatcher
 from logger import log, setup_logging
 from mcp_server import build_mcp_app, MCPAuthMiddleware
-from mcp_server.oauth import is_enabled as oauth_enabled
-from mcp_server.oauth_routes import router as oauth_router
 from mcp_server.ratelimit import MCPRateLimitMiddleware
 from pipelines.factory import ensure_collection
 
@@ -106,10 +104,6 @@ async def lifespan(app: FastAPI):
 
     # DB-Schema + Admin-User
     await init_db()
-
-    # OAuth: Tabellen kommen über init_db() (Postgres). Nur Status loggen.
-    if oauth_enabled():
-        log.info("mcp.oauth.enabled")
 
     # Qdrant-Collection anlegen (einmalig beim Boot)
     try:
@@ -249,9 +243,6 @@ _fastapi.include_router(users_router)
 _fastapi.include_router(maintenance_router)
 _fastapi.include_router(suggest_router)
 _fastapi.include_router(system_router)
-
-# OAuth-Routen + Well-Known direkt an der FastAPI-App (keine Auth-Middleware!)
-_fastapi.include_router(oauth_router)
 
 
 # ---------------------------------------------------------------------------
