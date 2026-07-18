@@ -68,6 +68,10 @@ class Settings(BaseSettings):
     staging_dir: Path = _APPDATA / "staging"
     backup_dir: Path = _APPDATA / "backups"
     backup_keep_days: int = 7
+    # --- Publish/Versionierung (M7) ---
+    # Getaggte Versionen ("current"/"prev") sind vor Cleanup HART geschützt;
+    # ungetaggte Alt-Versionen werden best-effort nach dieser Frist geräumt.
+    publish_cleanup_grace_days: int = 7
     query_log_keep_days: int = 90           # DSGVO-Speicherbegrenzung; 0 = nie löschen
     docs_enabled: bool = False              # /docs + /openapi.json nur wenn true
     rerank_enabled: bool = True             # Post-Retrieval-Reranker (BGE) an/aus
@@ -126,6 +130,12 @@ class Settings(BaseSettings):
     def lancedb_uri(self) -> str:
         """LanceDB-Dataset im Vault (der EINZIGE Wissensspeicher, M3)."""
         return str(self.ragos_dir / "index.lance")
+
+    @property
+    def reader_cache_uri(self) -> str:
+        """Lokaler Leser-Cache des Vault-Datasets (M7). SMB ist nur Transport —
+        Leser fragen NIE live über SMB, sondern gegen diese lokale Kopie."""
+        return str(_APPDATA / "cache" / "index.lance")
 
     @property
     def appstate_db_path(self) -> Path:

@@ -1,26 +1,28 @@
 """
-Backup-Engine: Postgres-Dump + Qdrant-Snapshot + Cleanup.
+Backup-Engine (lokale Variante, M7): Vault-Index-Snapshot + appstate-Kopie + Publish.
 
-Postgres: pg_dump (custom format, komprimiert) → /data/backups/postgres_<ts>.dump
-Qdrant:   Collection-Snapshot von `rag_documents`, heruntergeladen nach
-          /data/backups/<name>.snapshot (per Upload-API wiederherstellbar).
+Kein pg_dump / Qdrant-Snapshot mehr (beides entfällt mit SQLite+LanceDB). Der
+Nachtlauf:
+  1. `publish()` — die neueste Dataset-Version als `current` taggen (atomar).
+  2. **Vault-Index-Snapshot** — Kopie von `.ragos/index.lance` → backup_dir/
+     `index_<ts>.lance` (immutable Versionen inkl. Tags reisen mit).
+  3. **appstate-Kopie** — `appstate.sqlite` → backup_dir/`appstate_<ts>.sqlite`
+     (Keys/Users/Query-Log; lokal, nicht im Vault).
+  4. Cleanup alter Snapshots (`backup_keep_days`) + Query-Log-Retention (DSGVO).
 
-Cleanup: Dateien älter als BACKUP_KEEP_DAYS werden gelöscht
-         (Postgres-Dumps UND Qdrant-Snapshots).
+Tiefste Wiederherstellung ist ohnehin **Rebuild-aus-Dokumenten** (`reindex_all`):
+die Roh-Dateien im Vault sind die Quelle, der Index ist abgeleitet.
 """
 from __future__ import annotations
 
 import asyncio
-import os
-import subprocess
+import shutil
+import sqlite3
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
-import httpx
-
 from config import settings
 from logger import log
-from pipelines.factory import COLLECTION_NAME
 
 
 def _ts() -> str:
@@ -28,96 +30,61 @@ def _ts() -> str:
 
 
 # ---------------------------------------------------------------------------
-# Postgres-Dump
+# Vault-Index-Snapshot (LanceDB-Dataset-Verzeichnis)
 # ---------------------------------------------------------------------------
-async def backup_postgres() -> Path:
+def backup_vault_index() -> Path | None:
+    """Kopiert das LanceDB-Dataset in den backup_dir. None, wenn (noch) keins existiert."""
     s = settings()
+    src = Path(s.lancedb_uri)
+    if not src.exists():
+        log.info("backup.vault.skip_no_dataset", path=str(src))
+        return None
     s.backup_dir.mkdir(parents=True, exist_ok=True)
-    out = s.backup_dir / f"postgres_{_ts()}.dump"
+    out = s.backup_dir / f"index_{_ts()}.lance"
+    shutil.copytree(src, out)
+    size_mb = sum(f.stat().st_size for f in out.rglob("*") if f.is_file()) / 1024 / 1024
+    log.info("backup.vault.done", path=str(out), size_mb=round(size_mb, 1))
+    return out
 
-    cmd = [
-        "pg_dump",
-        "-h", s.postgres_host,
-        "-p", str(s.postgres_port),
-        "-U", s.postgres_user,
-        "-d", s.postgres_db,
-        "-F", "c",            # custom format (komprimiert, wiederherstellbar)
-        "-f", str(out),
-    ]
-    env = {**os.environ, "PGPASSWORD": s.postgres_password}
 
+# ---------------------------------------------------------------------------
+# appstate.sqlite-Snapshot (konsistent via SQLite-Backup-API, WAL-sicher)
+# ---------------------------------------------------------------------------
+def backup_appstate() -> Path | None:
+    s = settings()
+    src = s.appstate_db_path
+    if not src.exists():
+        log.info("backup.appstate.skip_no_db", path=str(src))
+        return None
+    s.backup_dir.mkdir(parents=True, exist_ok=True)
+    out = s.backup_dir / f"appstate_{_ts()}.sqlite"
+    src_conn = sqlite3.connect(str(src))
+    dst_conn = sqlite3.connect(str(out))
     try:
-        result = await asyncio.to_thread(
-            subprocess.run,
-            cmd,
-            env=env,
-            capture_output=True,
-            timeout=600,
-        )
-        if result.returncode != 0:
-            raise RuntimeError(result.stderr.decode()[:500])
-        log.info("backup.postgres.done", path=str(out), size_mb=round(out.stat().st_size / 1024 / 1024, 1))
-        return out
-    except Exception as e:
-        out.unlink(missing_ok=True)
-        raise RuntimeError(f"pg_dump failed: {e}") from e
+        src_conn.backup(dst_conn)   # konsistenter Snapshot trotz WAL/laufender Writes
+    finally:
+        dst_conn.close()
+        src_conn.close()
+    log.info("backup.appstate.done", path=str(out),
+             size_mb=round(out.stat().st_size / 1024 / 1024, 2))
+    return out
 
 
 # ---------------------------------------------------------------------------
-# Qdrant-Snapshot (alle Collections)
-# ---------------------------------------------------------------------------
-async def backup_qdrant() -> str:
-    """
-    Triggert einen Full-Snapshot in Qdrant UND lädt ihn ins Bind-Mount
-    `/data/backups` herunter.
-
-    Wichtig: Der Snapshot liegt zunächst nur im Qdrant-internen Storage
-    (qdrant-data Volume). Würde man ihn dort lassen, wäre er bei
-    `docker compose down -v` mitsamt den Daten weg — das "Backup" böte dann
-    NULL Disaster-Recovery. Darum laden wir die Snapshot-Datei sofort in das
-    von außen sicherbare Bind-Mount-Verzeichnis herunter.
-
-    Gibt den Snapshot-Namen zurück.
-    """
-    s = settings()
-    s.backup_dir.mkdir(parents=True, exist_ok=True)
-    headers = {"api-key": s.qdrant_api_key} if s.qdrant_api_key else {}
-    base = f"{s.qdrant_url}/collections/{COLLECTION_NAME}/snapshots"
-    async with httpx.AsyncClient(timeout=600) as c:
-        r = await c.post(base, headers=headers)
-        r.raise_for_status()
-        name = r.json().get("result", {}).get("name", "unknown")
-
-        # Snapshot-Datei ins Bind-Mount herunterladen (offsite-sicherbar,
-        # per Upload-API wiederherstellbar — siehe scripts/restore.sh).
-        out = s.backup_dir / name
-        async with c.stream("GET", f"{base}/{name}", headers=headers) as resp:
-            resp.raise_for_status()
-            with open(out, "wb") as fh:
-                async for chunk in resp.aiter_bytes(chunk_size=1024 * 1024):
-                    fh.write(chunk)
-
-    log.info(
-        "backup.qdrant.done",
-        snapshot=name,
-        downloaded_to=str(out),
-        size_mb=round(out.stat().st_size / 1024 / 1024, 1),
-    )
-    return name
-
-
-# ---------------------------------------------------------------------------
-# Cleanup alter Backups (Postgres-Dumps + Qdrant-Snapshots)
+# Cleanup alter Backups
 # ---------------------------------------------------------------------------
 def cleanup_old_backups() -> int:
     s = settings()
     cutoff = datetime.now(timezone.utc) - timedelta(days=s.backup_keep_days)
     removed = 0
-    for pattern in ("postgres_*.dump", "*.snapshot"):
+    for pattern in ("index_*.lance", "appstate_*.sqlite"):
         for f in s.backup_dir.glob(pattern):
             mtime = datetime.fromtimestamp(f.stat().st_mtime, tz=timezone.utc)
             if mtime < cutoff:
-                f.unlink()
+                if f.is_dir():
+                    shutil.rmtree(f, ignore_errors=True)
+                else:
+                    f.unlink(missing_ok=True)
                 removed += 1
                 log.info("backup.cleanup.removed", file=f.name)
     return removed
@@ -127,18 +94,10 @@ def cleanup_old_backups() -> int:
 # Query-Log-Retention (DSGVO Speicherbegrenzung)
 # ---------------------------------------------------------------------------
 async def cleanup_old_query_logs() -> int:
-    """
-    Löscht query_log-Einträge älter als QUERY_LOG_KEEP_DAYS.
-
-    query_log speichert query_text (potenziell personenbezogene Suchbegriffe)
-    und retrieved_doc_ids dauerhaft. Ohne Retention wächst das unbegrenzt —
-    DSGVO Art. 5 (Speicherbegrenzung). 0 = nie löschen (dann bewusst so setzen).
-    """
+    """Löscht query_log-Einträge älter als QUERY_LOG_KEEP_DAYS. 0 = nie löschen."""
     s = settings()
     if s.query_log_keep_days <= 0:
         return 0
-    # Lokale Imports: vermeidet Circular-Import beim Modul-Load (engine wird
-    # im main-Lifespan importiert, bevor die DB-Schicht bereit ist).
     from sqlalchemy import delete
 
     from db.models import QueryLog
@@ -158,22 +117,30 @@ async def cleanup_old_query_logs() -> int:
 async def run_backup() -> dict:
     t0 = datetime.now(timezone.utc)
     log.info("backup.run.start")
-    result: dict = {"started_at": t0.isoformat(), "postgres": None, "qdrant": None, "cleaned": 0, "error": None}
+    result: dict = {"started_at": t0.isoformat(), "published": None,
+                    "index": None, "appstate": None, "cleaned": 0, "error": None}
 
     try:
-        pg_path = await backup_postgres()
-        result["postgres"] = str(pg_path.name)
+        from pipelines.publish import prune_versions, publish
+        result["published"] = (await asyncio.to_thread(publish)).get("published")
+        await asyncio.to_thread(prune_versions)   # Kompaktierung + Retention (best-effort)
     except Exception as e:
-        log.warning("backup.postgres.failed", error=str(e))
+        log.warning("backup.publish.failed", error=str(e))
         result["error"] = str(e)
 
     try:
-        snap = await backup_qdrant()
-        result["qdrant"] = snap
+        idx = await asyncio.to_thread(backup_vault_index)
+        result["index"] = idx.name if idx else None
     except Exception as e:
-        log.warning("backup.qdrant.failed", error=str(e))
-        if not result["error"]:
-            result["error"] = str(e)
+        log.warning("backup.vault.failed", error=str(e))
+        result["error"] = result["error"] or str(e)
+
+    try:
+        app = await asyncio.to_thread(backup_appstate)
+        result["appstate"] = app.name if app else None
+    except Exception as e:
+        log.warning("backup.appstate.failed", error=str(e))
+        result["error"] = result["error"] or str(e)
 
     try:
         result["cleaned"] = await asyncio.to_thread(cleanup_old_backups)
@@ -184,12 +151,6 @@ async def run_backup() -> dict:
         result["query_logs_pruned"] = await cleanup_old_query_logs()
     except Exception as e:
         log.warning("query_log.cleanup.failed", error=str(e))
-
-    try:
-        from mcp_server.oauth import cleanup_expired as oauth_cleanup
-        result["oauth_tokens_pruned"] = await oauth_cleanup()
-    except Exception as e:
-        log.warning("oauth.cleanup.failed", error=str(e))
 
     log.info("backup.run.done", **result)
     return result
@@ -203,13 +164,16 @@ def list_backup_files() -> list[dict]:
     if not s.backup_dir.exists():
         return []
     files = []
-    for f in sorted(s.backup_dir.glob("postgres_*.dump"), reverse=True):
-        stat = f.stat()
-        files.append({
-            "name": f.name,
-            "size_mb": round(stat.st_size / 1024 / 1024, 2),
-            "created_at": datetime.fromtimestamp(stat.st_mtime, tz=timezone.utc).isoformat(),
-        })
+    for pattern in ("index_*.lance", "appstate_*.sqlite"):
+        for f in sorted(s.backup_dir.glob(pattern), reverse=True):
+            stat = f.stat()
+            size = (sum(x.stat().st_size for x in f.rglob("*") if x.is_file())
+                    if f.is_dir() else stat.st_size)
+            files.append({
+                "name": f.name,
+                "size_mb": round(size / 1024 / 1024, 2),
+                "created_at": datetime.fromtimestamp(stat.st_mtime, tz=timezone.utc).isoformat(),
+            })
     return files
 
 
