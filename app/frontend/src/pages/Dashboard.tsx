@@ -93,11 +93,10 @@ export default function Dashboard() {
         {healthLoading ? (
           <div style={{ fontSize: 13, color: '#a3a3a3' }}>Lädt…</div>
         ) : (
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 10 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 10 }}>
             <ServiceCard name="API" online={health?.status === 'ok' ? true : false} />
-            <ServiceCard name="Postgres" online={health?.services.postgres} />
-            <ServiceCard name="Qdrant" online={health?.services.qdrant} />
-            <ServiceCard name="Ollama" online={health?.services.ollama} />
+            <ServiceCard name="SQLite" online={health?.services.sqlite} />
+            <ServiceCard name="LanceDB" online={health?.services.lancedb} />
           </div>
         )}
       </div>

@@ -6,9 +6,11 @@ Legt DuplicateSuggestion an (status=pending) — kein automatisches Löschen.
 """
 from __future__ import annotations
 
-from sqlalchemy import select, text
+from collections import defaultdict
 
-from db.models import DuplicateSuggestion
+from sqlalchemy import select
+
+from db.models import Document, DocumentStatus, DuplicateSuggestion
 from db.session import get_session
 from logger import log
 
@@ -18,28 +20,27 @@ async def detect_duplicates() -> int:
     Sucht Hashes, die mehr als einmal vorkommen.
     Für jedes neue Paar (keep, remove) wird eine DuplicateSuggestion angelegt.
     Gibt Anzahl neuer Suggestions zurück.
+
+    Gruppierung Python-seitig (SQLite kennt kein `array_agg`); Reihenfolge nach
+    `uploaded_at` → ältestes Dokument je Hash = keep.
     """
     async with get_session() as s:
-        result = await s.execute(
-            text(
-                """
-                SELECT doc_hash,
-                       array_agg(id       ORDER BY uploaded_at ASC) AS ids,
-                       array_agg(file_name ORDER BY uploaded_at ASC) AS names
-                FROM documents
-                WHERE status = 'indexed'
-                GROUP BY doc_hash
-                HAVING count(*) > 1
-                """
+        rows = (
+            await s.execute(
+                select(Document.id, Document.doc_hash)
+                .where(Document.status == DocumentStatus.INDEXED.value)
+                .order_by(Document.uploaded_at.asc())
             )
-        )
-        rows = result.all()
+        ).all()
+
+    groups: dict[str, list] = defaultdict(list)
+    for did, doc_hash in rows:
+        groups[doc_hash].append(did)
 
     created = 0
-    for row in rows:
-        doc_hash = row.doc_hash
-        ids      = row.ids
-        # Ältestes Dokument = keep, alle jüngeren = potential remove
+    for doc_hash, ids in groups.items():
+        if len(ids) < 2:
+            continue
         keep_id = ids[0]
         for remove_id in ids[1:]:
             async with get_session() as s:

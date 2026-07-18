@@ -42,22 +42,8 @@ class Settings(BaseSettings):
     # die NAS zeigbar (RAG_VAULT_PATH). appstate.sqlite bleibt IMMER lokal.
     vault_path: Path = _DEFAULT_VAULT
 
-    # --- Postgres (entfällt in M2 → SQLite; Default nur fürs Booten) ---
-    postgres_host: str = "postgres"
-    postgres_port: int = 5432
-    postgres_db: str = "rag"
-    postgres_user: str = "rag"
-    postgres_password: str = ""
-
-    # --- Qdrant (entfällt in M3 → LanceDB; Default nur fürs Booten) ---
-    qdrant_host: str = "qdrant"
-    qdrant_port: int = 6333
-    qdrant_api_key: str = ""
-
-    # --- Embeddings (M4: fastembed/ONNX, kein Ollama mehr) ---
-    ollama_host: str = "http://127.0.0.1:11434"   # entfällt mit M4/M5
+    # --- Embeddings (fastembed/ONNX, kein Ollama) ---
     embed_model: str = "BAAI/bge-m3"              # fastembed-Modell-ID (ONNX)
-    llm_model: str = "qwen2.5:3b-instruct"        # entfällt in M5 (kein LLM)
 
     # --- App ---
     app_secret_key: str = "local-rag-os-secret"   # lokal; OAuth ist ohnehin aus
@@ -145,18 +131,6 @@ class Settings(BaseSettings):
         """Rollen + Norm-Muster (Vault-lokal)."""
         return self.ragos_dir / "config.json"
 
-    # --- Legacy-Abgeleitete (entfallen mit M2/M3, bis dahin fürs Booten da) ---
-    @property
-    def postgres_dsn(self) -> str:
-        return (
-            f"postgresql+asyncpg://{self.postgres_user}:{self.postgres_password}"
-            f"@{self.postgres_host}:{self.postgres_port}/{self.postgres_db}"
-        )
-
-    @property
-    def qdrant_url(self) -> str:
-        return f"http://{self.qdrant_host}:{self.qdrant_port}"
-
 
 @lru_cache
 def settings() -> Settings:
@@ -166,11 +140,6 @@ def settings() -> Settings:
 # ---------------------------------------------------------------------------
 # Konfig-Typen (stabile Typen für alle Module)
 # ---------------------------------------------------------------------------
-class LLMConfig(BaseModel):
-    provider: str = "ollama"
-    model: str
-
-
 class ChunkingConfig(BaseModel):
     size: int = 700
     overlap: int = 80
@@ -191,7 +160,6 @@ class LimitsConfig(BaseModel):
 class GlobalConfig(BaseModel):
     """Globale Laufzeit-Konfiguration (aus Settings, gecached)."""
     embed_model: str
-    llm: LLMConfig
     chunking: ChunkingConfig
     retrieval: RetrievalConfig
     limits: LimitsConfig
@@ -202,7 +170,6 @@ def global_config() -> GlobalConfig:
     s = settings()
     return GlobalConfig(
         embed_model=s.embed_model,
-        llm=LLMConfig(provider="ollama", model=s.llm_model),
         chunking=ChunkingConfig(size=700, overlap=80, strategy="structural"),
         retrieval=RetrievalConfig(top_k=5, hybrid=True, rerank=s.rerank_enabled),
         limits=LimitsConfig(max_file_mb=50, max_context_chunks=8),

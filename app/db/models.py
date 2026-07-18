@@ -179,7 +179,7 @@ class Document(Base):
         UniqueConstraint("folder_path", "doc_hash", name="uq_folder_doc_hash"),
         Index("idx_documents_folder", "folder_path"),
         Index("idx_documents_status", "status"),
-        # GIN für Tags wird in init_db via SQL nachgezogen
+        # (Tags = JSON auf SQLite; kein GIN — Tag-Filter laufen Python-seitig.)
     )
 
 
@@ -447,7 +447,7 @@ class GraphNode(Base):
         Index("idx_graph_nodes_type", "node_type"),
         Index("idx_graph_nodes_canonical", "canonical_key"),
         Index("idx_graph_nodes_community", "community_id"),
-        # GIN auf folder_paths wird in init_db via SQL nachgezogen (ACL-Containment).
+        # (folder_paths = JSON auf SQLite; ACL-Auflösung Python-seitig, kein GIN.)
     )
 
 

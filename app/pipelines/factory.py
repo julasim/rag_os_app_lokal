@@ -65,11 +65,6 @@ def reset_collection() -> None:
     store.reset()
 
 
-def enable_quantization(enable: bool = True) -> dict:
-    """No-Op: LanceDB braucht keine Qdrant-Named-Vector-Quantisierung."""
-    return {"enabled": False, "note": "LanceDB: keine Quantisierung nötig"}
-
-
 # ---------------------------------------------------------------------------
 # Rückwärtskompat-Shims (werfen beim Aufruf; Call-Sites werden ersetzt)
 # ---------------------------------------------------------------------------

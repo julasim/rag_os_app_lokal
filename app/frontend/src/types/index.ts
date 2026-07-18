@@ -31,7 +31,7 @@ export interface User {
 export interface HealthResponse {
   status: string;
   version: string;
-  services: { postgres: boolean; qdrant: boolean; ollama: boolean };
+  services: { sqlite: boolean; lancedb: boolean };
 }
 
 export interface MetricsResponse {

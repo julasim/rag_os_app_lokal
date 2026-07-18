@@ -10,11 +10,21 @@ from __future__ import annotations
 import uuid
 from datetime import datetime, timedelta, timezone
 
-from sqlalchemy import select, text
+from sqlalchemy import select
 
 from db.models import Document, MaintenanceLog
 from db.session import get_session
 from logger import log
+
+
+def _replace_in_tags(tags: list[str] | None, old: str, new: str) -> list[str]:
+    """Ersetzt `old` durch `new` und dedupliziert, Reihenfolge stabil (JSON-Liste)."""
+    out: list[str] = []
+    for t in (tags or []):
+        repl = new if t == old else t
+        if repl not in out:
+            out.append(repl)
+    return out
 
 
 def _levenshtein(a: str, b: str) -> int:
@@ -74,29 +84,16 @@ async def consolidate_tags() -> list[uuid.UUID]:
 
 async def _merge(winner: str, loser: str) -> uuid.UUID | None:
     async with get_session() as s:
-        # Welche Docs sind betroffen?
-        result = await s.execute(
-            select(Document.id).where(
-                Document.tags.contains([loser]),
-            )
-        )
-        affected = [r[0] for r in result.all()]
+        # Betroffene Docs Python-seitig finden (tags ist JSON, kein ARRAY → kein
+        # `.contains`/`ANY` auf SQLite) und die Tag-Liste neu schreiben.
+        rows = (await s.execute(select(Document.id, Document.tags))).all()
+        affected = [did for did, tags in rows if loser in (tags or [])]
         if not affected:
             return None
 
-        # Ersetzen + Deduplizieren
-        await s.execute(
-            text(
-                """
-                UPDATE documents
-                SET tags = ARRAY(
-                    SELECT DISTINCT unnest(array_replace(tags, :loser, :winner))
-                )
-                WHERE :loser = ANY(tags)
-                """
-            ),
-            {"loser": loser, "winner": winner},
-        )
+        for did in affected:
+            doc = await s.get(Document, did)
+            doc.tags = _replace_in_tags(doc.tags, loser, winner)  # Neuzuweisung → JSON-dirty
 
         log_entry = MaintenanceLog(
             action_type="tag_merge",
@@ -130,23 +127,11 @@ async def undo_tag_merge(log_id: uuid.UUID) -> bool:
             return False
 
         p = entry.undo_payload
-        await s.execute(
-            text(
-                """
-                UPDATE documents
-                SET tags = ARRAY(
-                    SELECT DISTINCT unnest(array_replace(tags, :winner, :loser))
-                )
-                WHERE :winner = ANY(tags)
-                  AND id = ANY(:ids::uuid[])
-                """
-            ),
-            {
-                "winner": p["winner"],
-                "loser": p["loser"],
-                "ids": p["doc_ids"],
-            },
-        )
+        ids = {uuid.UUID(x) if not isinstance(x, uuid.UUID) else x for x in p["doc_ids"]}
+        for did in ids:
+            doc = await s.get(Document, did)
+            if doc and p["winner"] in (doc.tags or []):
+                doc.tags = _replace_in_tags(doc.tags, p["winner"], p["loser"])
         entry.undo_applied = True
 
     log.info("maintenance.tag_merge.undone", log_id=str(log_id))

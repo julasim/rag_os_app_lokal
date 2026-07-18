@@ -4,13 +4,11 @@ from __future__ import annotations
 import asyncio
 from datetime import datetime, timedelta, timezone
 
-import httpx
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import func, select, text
 
 from api.schemas import HealthResponse
 from auth.dependencies import AuthContext, require_any_auth
-from config import settings
 from db.models import Document, DocumentStatus, QueryLog
 from db.session import get_session
 
@@ -30,9 +28,8 @@ VERSION = "0.1.0"
 @router.get("/health", response_model=HealthResponse)
 async def health():
     services = {
-        "postgres": await _check_postgres(),
-        "qdrant": await _check_qdrant(),
-        "ollama": await _check_ollama(),
+        "sqlite": await _check_db(),
+        "lancedb": await asyncio.to_thread(_check_lancedb),
     }
     ok = all(services.values())
     return HealthResponse(
@@ -42,7 +39,8 @@ async def health():
     )
 
 
-async def _check_postgres() -> bool:
+async def _check_db() -> bool:
+    """Lokale appstate.sqlite erreichbar?"""
     try:
         async with get_session() as s:
             await s.execute(text("SELECT 1"))
@@ -51,23 +49,12 @@ async def _check_postgres() -> bool:
         return False
 
 
-async def _check_qdrant() -> bool:
+def _check_lancedb() -> bool:
+    """LanceDB-Wissensspeicher öffenbar? (count_rows/leere Tabelle zählt als ok)."""
     try:
-        async with httpx.AsyncClient(timeout=3) as c:
-            r = await c.get(
-                f"{settings().qdrant_url}/readyz",
-                headers={"api-key": settings().qdrant_api_key},
-            )
-            return r.status_code == 200
-    except Exception:
-        return False
-
-
-async def _check_ollama() -> bool:
-    try:
-        async with httpx.AsyncClient(timeout=3) as c:
-            r = await c.get(f"{settings().ollama_host}/api/tags")
-            return r.status_code == 200
+        from pipelines import store
+        store.count()
+        return True
     except Exception:
         return False
 
@@ -151,22 +138,6 @@ async def reindex_all_endpoint(
     _require_admin(ctx)
     from ingest.pipeline import reindex_all
     return await reindex_all(reset=reset, reparse_missing=reparse_missing)
-
-
-@router.post("/quantize", tags=["system"], summary="Qdrant INT8-Quantisierung an/aus (Admin)")
-async def quantize_endpoint(
-    enable: bool = True,
-    ctx: AuthContext = Depends(require_any_auth),
-):
-    """
-    Schaltet die Scalar-INT8-Quantisierung des dichten Vektors an/aus — **kein
-    Re-Embed**. Spart RAM und beschleunigt die Suche; die Genauigkeit bleibt über
-    Qdrants Default-Rescore (Original-Vektoren `on_disk`). Voll reversibel
-    (`enable=false`).
-    """
-    _require_admin(ctx)
-    from pipelines.factory import enable_quantization
-    return await asyncio.to_thread(enable_quantization, enable)
 
 
 @router.post("/graph/rebuild", tags=["system"], summary="Wissensgraph neu bauen (Admin)")
