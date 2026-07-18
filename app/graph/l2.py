@@ -33,7 +33,6 @@ from config import settings
 from db.models import Document, DocumentChunk, DocumentStatus, GraphEdge
 from db.session import get_session
 from logger import log
-from pipelines.factory import COLLECTION_NAME
 
 __all__ = ["BuildStatsL2", "build_l2"]
 
@@ -116,39 +115,19 @@ def _neardup_pairs(doc_ids: list[str], texts: list[str], w: int, tau: float
 
 def _similar_pairs(doc_id_set: set[str], top_k: int, tau: float
                    ) -> list[tuple[str, str, float]]:
-    """similar_to-Paare: Doc-Zentroide (dense Qdrant-Vektoren) → mutual-kNN ≥ tau."""
-    from qdrant_client import QdrantClient
+    """similar_to-Paare: Doc-Zentroide (dense LanceDB-Vektoren) → mutual-kNN ≥ tau."""
+    from pipelines import store
 
-    client = QdrantClient(url=settings().qdrant_url, api_key=settings().qdrant_api_key)
     acc: dict[str, list] = {}  # doc_id -> [sum_vec, count]
-    try:
-        offset = None
-        while True:
-            points, offset = client.scroll(
-                collection_name=COLLECTION_NAME,
-                with_vectors=["text-dense"],
-                with_payload=["meta"],
-                limit=256,
-                offset=offset,
-            )
-            for p in points:
-                meta = (p.payload or {}).get("meta") or {}
-                did = meta.get("doc_id")
-                if not did or did not in doc_id_set:
-                    continue
-                vec = p.vector.get("text-dense") if isinstance(p.vector, dict) else p.vector
-                if vec is None:
-                    continue
-                v = np.asarray(vec, dtype=np.float32)
-                if did not in acc:
-                    acc[did] = [v.copy(), 1]
-                else:
-                    acc[did][0] += v
-                    acc[did][1] += 1
-            if offset is None:
-                break
-    finally:
-        client.close()
+    for did, vec in store.scan_dense_vectors():
+        if not did or did not in doc_id_set or vec is None:
+            continue
+        v = np.asarray(vec, dtype=np.float32)
+        if did not in acc:
+            acc[did] = [v.copy(), 1]
+        else:
+            acc[did][0] += v
+            acc[did][1] += 1
 
     ids = list(acc.keys())
     if len(ids) < 2:

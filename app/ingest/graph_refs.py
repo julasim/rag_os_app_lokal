@@ -16,7 +16,7 @@ from typing import NamedTuple
 
 from graph.canonical import canonical_legal_ref, canonical_norm_id
 
-__all__ = ["Ref", "extract_refs"]
+__all__ = ["Ref", "NormMatch", "extract_refs", "norm_matches", "NORM_RE"]
 
 
 class Ref(NamedTuple):
@@ -25,12 +25,20 @@ class Ref(NamedTuple):
     raw: str            # roher Treffer (für Label/Debug)
 
 
+class NormMatch(NamedTuple):
+    canonical_key: str      # normalisierter Key (Jahr abgetrennt)
+    raw: str                # roher Treffer
+    version: str | None     # abgetrenntes Ausgabejahr, falls vorhanden
+
+
 # Norm-Präfixe (auch verkettet: „ÖNORM EN 1992", „DIN EN ISO 9001").
 _NORM_PREFIX = r"(?:ÖNORM|OENORM|ONORM|DIN|EN|ISO|IEC)"
 
 # Ein Norm-Verweis: ein oder mehrere verkettete Präfixe + Kennung (optionaler
 # Buchstabe + ≥2-stellige Zahl + optionale Teilnummern) + optionales Ausgabejahr.
-_NORM_RE = re.compile(
+# Öffentlich, damit die Eigen-Identitäts-Erkennung (ingest/metadata_extract)
+# DIESELBE Regex nutzt — kein Duplikat, keine Drift.
+NORM_RE = re.compile(
     rf"\b{_NORM_PREFIX}(?:\s+{_NORM_PREFIX})*"
     r"\s+[A-Z]?\s*\d{2,}(?:\s*[-–]\s*\d+)*"
     r"(?:\s*[:(]\s*\d{4}\)?)?",
@@ -57,7 +65,7 @@ def extract_refs(text: str) -> list[Ref]:
     seen: set[tuple[str, str]] = set()
     refs: list[Ref] = []
 
-    for m in _NORM_RE.finditer(text):
+    for m in NORM_RE.finditer(text):
         raw = m.group(0).strip()
         key, _version = canonical_norm_id(raw)
         if not key:
@@ -78,3 +86,19 @@ def extract_refs(text: str) -> list[Ref]:
             refs.append(Ref("legal", key, raw))
 
     return refs
+
+
+def norm_matches(text: str) -> list[NormMatch]:
+    """ALLE Norm-Treffer in Reihenfolge (mit Version, nicht dedupliziert).
+
+    Für die Eigen-Identitäts-Erkennung eines Dokuments (dominante/erste Norm im
+    Kopf) — braucht die Häufigkeit je Norm UND das Ausgabejahr, die `extract_refs`
+    (dedupliziert, ohne Version) verwirft.
+    """
+    out: list[NormMatch] = []
+    for m in NORM_RE.finditer(text or ""):
+        raw = m.group(0).strip()
+        key, version = canonical_norm_id(raw)
+        if key:
+            out.append(NormMatch(key, raw, version))
+    return out

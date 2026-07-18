@@ -46,7 +46,6 @@ from db.models import Document
 from db.session import get_session
 from ingest.queue import enqueue_files, get_job_status
 from logger import log
-from pipelines.factory import get_vector_store
 from pipelines.vector_ops import delete_qdrant_chunks, move_document
 
 router = APIRouter(prefix="/api/documents", tags=["documents"])
@@ -686,10 +685,10 @@ async def get_document_chunks(
         raise HTTPException(status.HTTP_404_NOT_FOUND)
     _require_folder_access(ctx, doc.folder_path)
 
-    store = get_vector_store()
+    from pipelines import store
     chunks = await asyncio.to_thread(
-        store.filter_documents,
-        filters={
+        store.filter_by_meta,
+        {
             "operator": "AND",
             "conditions": [{"field": "meta.doc_id", "operator": "==", "value": str(doc_id)}],
         },

@@ -1,14 +1,14 @@
 """
 High-Level Ingest-Pipeline.
 
-Orchestriert den gesamten Weg Datei → Qdrant:
+Orchestriert den gesamten Weg Datei → LanceDB:
   1. Hash berechnen, Duplikat-Check
-  2. Datei in /data/uploads/<folder>/ ablegen
-  3. Parsen
+  2. Datei in <uploads>/<folder>/ ablegen
+  3. Parsen (docling/legacy)
   4. Chunken
-  5. Embedden (Ollama)
-  6. Upsert in Qdrant
-  7. Postgres-Status aktualisieren
+  5. Embedden (ONNX/fastembed bge-m3)
+  6. Chunks kanonisch nach SQLite + Zeilen nach LanceDB (`chunks`)
+  7. Status aktualisieren
 """
 from __future__ import annotations
 
@@ -30,7 +30,6 @@ from db.session import get_session
 from ingest.chunker import chunk_document
 from ingest.parsers import parse_file
 from logger import log
-from pipelines.factory import get_embedder, get_sparse_doc_embedder, get_vector_store
 from pipelines.vector_ops import delete_qdrant_chunks
 
 
@@ -594,22 +593,43 @@ async def _embed_and_store(
     chunks: list[dict], embed_model: str
 ) -> None:
     """
-    Embeddet Chunks (dicht via Ollama + sparse via BM25) und schreibt sie nach
-    Qdrant. Der Sparse-Vektor macht die Hybrid-Suche möglich (exakte
-    Normnummern/§/Codes). Alle Haystack-/Fastembed-Calls sind synchron und
-    CPU-intensiv → in Threads ausgelagert, damit der Eventloop frei bleibt.
+    Embeddet die Chunk-Texte dicht (ONNX/fastembed bge-m3) und schreibt Text +
+    Vektor + Payload als Zeilen in die LanceDB-`chunks`-Tabelle. Die lexikalische
+    Seite (BM25/exakte Normnummern) übernimmt LanceDBs FTS-Index auf `text` —
+    kein separater Sparse-Vektor mehr, kein Haystack/Ollama.
+
+    Embedden ist CPU-intensiv → `asyncio.to_thread`, damit der Eventloop frei bleibt.
     """
-    from haystack import Document as HayDoc
+    from pipelines import store
+    from pipelines.factory import embed_texts
 
-    embedder = get_embedder(embed_model)
-    sparse_embedder = get_sparse_doc_embedder()
-    store = get_vector_store()
+    texts = [c["text"] for c in chunks]
+    vectors = await asyncio.to_thread(embed_texts, texts, embed_model)
 
-    hay_docs = [HayDoc(content=c["text"], meta=c["metadata"]) for c in chunks]
-
-    # 1. Dichte Embeddings (Ollama bge-m3)
-    embedded = await asyncio.to_thread(embedder.run, documents=hay_docs)
-    # 2. Sparse-Embeddings (BM25) auf denselben Docs ergänzen
-    sparse = await asyncio.to_thread(sparse_embedder.run, documents=embedded["documents"])
-    # 3. Beide Vektoren gemeinsam upserten
-    await asyncio.to_thread(store.write_documents, sparse["documents"])
+    rows: list[dict] = []
+    for c, vec in zip(chunks, vectors):
+        m = c.get("metadata") or {}
+        text = c.get("text") or ""
+        point_id = m.get("chunk_id") or _gen_chunk_id(
+            str(m.get("doc_id") or ""), m.get("section_path"), text
+        )
+        rows.append({
+            "point_id": point_id,
+            "chunk_id": m.get("chunk_id"),
+            "doc_id": str(m["doc_id"]) if m.get("doc_id") is not None else None,
+            "file_name": m.get("file_name"),
+            "folder": m.get("folder") or m.get("folder_path"),
+            "folder_path": m.get("folder_path"),
+            "text": text,
+            "vector": vec,
+            "page": m.get("page"),
+            "section_title": m.get("section_title"),
+            "section_path": m.get("section_path"),
+            "doc_type": m.get("doc_type"),
+            "norm_id": m.get("norm_id"),
+            "doc_version": m.get("doc_version"),
+            "language": m.get("language"),
+            "tags": list(m.get("tags") or []),
+            "table_html": m.get("table_html"),
+        })
+    await asyncio.to_thread(store.write, rows)

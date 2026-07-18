@@ -14,8 +14,6 @@ ACL erzwingt der Accept-Endpoint pro Dokument.
 """
 from __future__ import annotations
 
-import asyncio
-import re
 import uuid
 from collections import Counter, defaultdict
 from datetime import datetime, timedelta, timezone
@@ -24,7 +22,7 @@ from typing import NamedTuple
 from sqlalchemy import select
 
 from auth.folders import normalize_folder
-from config import global_config, settings
+from config import settings
 from db.models import (
     Document,
     DocumentStatus,
@@ -35,7 +33,6 @@ from db.models import (
 )
 from db.session import get_session
 from logger import log
-from pipelines.factory import get_generator
 from pipelines.vector_ops import move_document
 
 __all__ = [
@@ -60,17 +57,6 @@ class _DocRow(NamedTuple):
     norm_id: str | None
 
 
-_NAME_PROMPT = """\
-Du benennst EINEN Ordner für eine Gruppe thematisch zusammengehöriger Dokumente
-eines deutschsprachigen Unternehmens. Gib NUR den Ordnernamen zurück — kein Pfad,
-keine Anführungszeichen, kein Satz, keine Erklärung. 1–3 Wörter, prägnant, deutsch.
-
-Dokumente der Gruppe:
-{items}
-
-Ordnername:"""
-
-
 def _deterministic_name(docs: list[_DocRow], fallback_label: str | None) -> str:
     """Namensableitung ohne LLM: dominanter Tag → norm-Präfix → Community-Label."""
     tags: Counter[str] = Counter()
@@ -87,41 +73,6 @@ def _deterministic_name(docs: list[_DocRow], fallback_label: str | None) -> str:
     if fallback_label:
         return fallback_label
     return "Sammlung"
-
-
-def _clean_name(raw: str) -> str:
-    """Roh-Antwort → sauberer, einzeiliger Ordner-Basisname (kein Pfad/Slash)."""
-    line = (raw or "").strip().splitlines()[0] if raw and raw.strip() else ""
-    line = line.strip().strip("/").strip('"').strip("'").strip()
-    # nur die erste „Ordnername:"-artige Zeile, Doppelpunkt-Präfix abschneiden
-    if ":" in line and len(line.split(":", 1)[1].strip()) > 0:
-        line = line.split(":", 1)[1].strip()
-    # unzulässige Pfadtrenner raus, auf sinnvolle Länge kürzen
-    line = line.replace("\\", " ").replace("/", " ").strip()
-    line = re.sub(r"\s+", " ", line)
-    return line[:60]
-
-
-async def _llm_folder_name(docs: list[_DocRow], fallback_label: str | None) -> str:
-    """Zielordner-NAME (nur der Name) vom LLM, mit deterministischem Fallback."""
-    fb = _deterministic_name(docs, fallback_label)
-    items = "\n".join(
-        f"- {d.file_name}" + (f" [Norm: {d.norm_id}]" if d.norm_id else "")
-        + (f" (Tags: {', '.join(d.tags)})" if d.tags else "")
-        for d in docs[:15]
-    )
-    try:
-        cfg = global_config()
-        gen = get_generator(cfg.llm)
-        result = await asyncio.to_thread(gen.run, prompt=_NAME_PROMPT.format(items=items))
-        reply = (result.get("replies") or [""])[0]
-        name = _clean_name(reply)
-        if name:
-            log.info("reorg.llm_name.ok", name=name)
-            return name
-    except Exception as e:
-        log.warning("reorg.llm_name.failed", error=str(e))
-    return fb
 
 
 async def build_folder_suggestions() -> ReorgStats:
@@ -186,7 +137,7 @@ async def build_folder_suggestions() -> ReorgStats:
             target = top_folder
             reason = f"Community {cid}: Konsolidierung in den dominanten Ordner {target}"
         else:
-            name = await _llm_folder_name(docs, comm_labels.get(cid))
+            name = _deterministic_name(docs, comm_labels.get(cid))
             target = normalize_folder(name)
             reason = f"Community {cid}: verstreut auf {len(distinct)} Ordner → Sammelordner {target}"
 

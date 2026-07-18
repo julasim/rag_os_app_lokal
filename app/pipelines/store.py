@@ -16,6 +16,7 @@ from functools import lru_cache
 from typing import Any
 
 import lancedb
+import pyarrow as pa
 
 from config import settings
 from logger import log
@@ -29,6 +30,38 @@ _META_COLS = (
     "section_title", "section_path", "doc_type", "norm_id",
     "doc_version", "language", "tags",
 )
+
+# Kanonisches, stabiles Tabellen-Schema (alle Writes projizieren darauf → keine
+# pyarrow-Typ-Inferenz aus dem ersten Batch, keine Schema-Drift bei `add`).
+_COLS = (
+    "point_id", "doc_id", "file_name", "folder", "folder_path", "text", "vector",
+    "page", "section_title", "section_path", "doc_type", "norm_id",
+    "doc_version", "language", "tags", "chunk_id", "table_html",
+)
+
+
+def _arrow_schema(vector_dim: int) -> pa.Schema:
+    """Explizites Arrow-Schema; `vector`-Dimension aus den Daten (bge-m3=1024,
+    Test-Modell bge-small=384) → modellunabhängig."""
+    return pa.schema([
+        ("point_id", pa.string()),
+        ("doc_id", pa.string()),
+        ("file_name", pa.string()),
+        ("folder", pa.string()),
+        ("folder_path", pa.string()),
+        ("text", pa.string()),
+        ("vector", pa.list_(pa.float32(), vector_dim)),
+        ("page", pa.int64()),
+        ("section_title", pa.string()),
+        ("section_path", pa.string()),
+        ("doc_type", pa.string()),
+        ("norm_id", pa.string()),
+        ("doc_version", pa.string()),
+        ("language", pa.string()),
+        ("tags", pa.list_(pa.string())),
+        ("chunk_id", pa.string()),
+        ("table_html", pa.string()),
+    ])
 
 _lock = threading.Lock()
 
@@ -112,16 +145,24 @@ def _row_to_doc(row: dict) -> RetrievedDoc:
 # Öffentliche API (synchron)
 # ---------------------------------------------------------------------------
 def write(rows: list[dict]) -> int:
-    """Schreibt Chunk-Zeilen (jede mit `vector`, `text`, `point_id` + Payload)."""
+    """Schreibt Chunk-Zeilen (jede mit `vector`, `text`, `point_id` + Payload).
+
+    Projiziert jede Zeile auf `_COLS` (fehlende Keys → null) und schreibt mit
+    explizitem Arrow-Schema → stabil über alle Batches (`add` bricht sonst bei
+    Typ-/Spalten-Drift).
+    """
     if not rows:
         return 0
     db = _db()
+    dim = len(rows[0]["vector"])
+    clean = [{k: r.get(k) for k in _COLS} for r in rows]
+    data = pa.Table.from_pylist(clean, schema=_arrow_schema(dim))
     with _lock:
         if TABLE not in db.table_names():
-            tbl = db.create_table(TABLE, data=rows)      # Vektor-Dim aus Daten
+            tbl = db.create_table(TABLE, data=data)
         else:
             tbl = db.open_table(TABLE)
-            tbl.add(rows)
+            tbl.add(data)
         _ensure_fts(tbl)
     return len(rows)
 
@@ -177,6 +218,23 @@ def delete_by_doc_id(doc_id) -> int:
     if before:
         tbl.delete(f"doc_id = '{did}'")
     return before
+
+
+def update_folder(doc_id, new_folder: str) -> int:
+    """Setzt `folder`/`folder_path` ALLER Chunks eines Dokuments (per `doc_id`).
+
+    LanceDB-`update` = neue immutable Version (MVCC), kein Re-Embedding, kein
+    in-place-Payload-Patch wie früher bei Qdrant. Gibt die Zeilenzahl zurück.
+    """
+    tbl = _open()
+    if tbl is None:
+        return 0
+    did = str(doc_id).replace("'", "''")
+    n = tbl.count_rows(f"doc_id = '{did}'")
+    if n:
+        tbl.update(where=f"doc_id = '{did}'",
+                   values={"folder": new_folder, "folder_path": new_folder})
+    return n
 
 
 def scan_dense_vectors():

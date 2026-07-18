@@ -91,7 +91,3 @@ def get_sparse_doc_embedder():
 
 def get_sparse_text_embedder():
     raise RuntimeError("Sparse-Embedder entfällt — LanceDB-FTS (M3)")
-
-
-def get_generator(*args, **kwargs):
-    raise RuntimeError("LLM/Ollama entfernt — deterministisches Tagging (M5)")

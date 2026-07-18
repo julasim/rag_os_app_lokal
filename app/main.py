@@ -78,12 +78,12 @@ _mcp_asgi = _mcp.streamable_http_app()
 async def _warmup_models() -> None:
     try:
         from config import global_config
-        from pipelines.factory import get_sparse_text_embedder, get_text_embedder
+        from pipelines.factory import warmup_embedder
         cfg = global_config()
         log.info("warmup.start")
-        # BM25-Sparse + Ollama-Dense (wärmt zugleich das Ollama-Modell im Speicher)
-        await asyncio.to_thread(lambda: get_sparse_text_embedder().run(text="warmup"))
-        await asyncio.to_thread(lambda: get_text_embedder(cfg.embed_model).run(text="warmup"))
+        # Dense-Embedder (ONNX/fastembed bge-m3) einmalig laden. Die lexikalische
+        # Seite ist LanceDBs FTS — kein Sparse-Embedder, kein Ollama mehr.
+        await asyncio.to_thread(warmup_embedder)
         # ONNX-Reranker (INT8, gebacken) laden, falls aktiv
         if cfg.retrieval.rerank:
             from pipelines.reranker import warmup as rerank_warmup

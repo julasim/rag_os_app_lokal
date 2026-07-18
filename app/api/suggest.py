@@ -30,7 +30,6 @@ from db.session import get_session
 from ingest.parsers import parse_file
 from ingest.queue import enqueue_files
 from logger import log
-from pipelines.factory import get_vector_store
 from pipelines.vector_ops import move_document
 from services.folder_suggester import DocInfo, FolderSuggestion, suggest_folders
 
@@ -130,10 +129,9 @@ async def suggest_from_docs(
     if not docs:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Keine Dokumente gefunden")
 
-    store = get_vector_store()
     doc_infos: list[DocInfo] = []
     for doc in docs:
-        snippet = await _qdrant_snippet(store, str(doc.id))
+        snippet = await _store_snippet(str(doc.id))
         doc_infos.append(DocInfo(
             doc_id=str(doc.id),
             filename=doc.file_name,
@@ -378,12 +376,13 @@ def _normalize_folder(path: str) -> str:
     return p
 
 
-async def _qdrant_snippet(store, doc_id: str, max_chars: int = 300) -> str:
-    """Erster Text-Chunk aus Qdrant für ein Dokument."""
+async def _store_snippet(doc_id: str, max_chars: int = 300) -> str:
+    """Erster Text-Chunk aus dem Store (LanceDB) für ein Dokument."""
+    from pipelines import store
     try:
         chunks = await asyncio.to_thread(
-            store.filter_documents,
-            filters={
+            store.filter_by_meta,
+            {
                 "operator": "AND",
                 "conditions": [
                     {"field": "meta.doc_id", "operator": "==", "value": doc_id}
@@ -393,11 +392,11 @@ async def _qdrant_snippet(store, doc_id: str, max_chars: int = 300) -> str:
         if chunks:
             chunks_sorted = sorted(
                 chunks,
-                key=lambda c: (c.meta or {}).get("page", 0),
+                key=lambda c: (c.meta or {}).get("page") or 0,
             )
             return (chunks_sorted[0].content or "")[:max_chars]
     except Exception as exc:
-        log.warning("suggest.qdrant_snippet_failed", doc_id=doc_id, error=str(exc))
+        log.warning("suggest.store_snippet_failed", doc_id=doc_id, error=str(exc))
     return ""
 
 
