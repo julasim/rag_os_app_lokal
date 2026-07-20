@@ -25,18 +25,29 @@ COLLECTION_NAME = "chunks"
 @lru_cache(maxsize=2)
 def _embedder(model: str):
     from fastembed import TextEmbedding
-    log.info("embedder.load", model=model)
-    return TextEmbedding(model_name=model)
+    cache_dir = settings().embed_cache_dir
+    log.info("embedder.load", model=model, cache_dir=cache_dir)
+    # cache_dir = gebackenes/heruntergeladenes Modell (M8d Hybrid). Vorhanden →
+    # offline genutzt; fehlt → fastembed lädt beim ersten Aufruf dorthin.
+    return TextEmbedding(model_name=model, cache_dir=cache_dir)
+
+
+def _is_e5(model: str) -> bool:
+    """e5-Modelle brauchen asymmetrische Präfixe: 'query:' für Fragen, 'passage:'
+    für Dokumente. Andere Modelle (bge-*) verwenden keine Präfixe."""
+    return "e5" in model.lower()
 
 
 def embed_query(text: str, model: str | None = None) -> list[float]:
-    m = _embedder(model or settings().embed_model)
-    return list(m.embed([text]))[0].tolist()
+    m = model or settings().embed_model
+    q = f"query: {text}" if _is_e5(m) else text
+    return list(_embedder(m).embed([q]))[0].tolist()
 
 
 def embed_texts(texts: list[str], model: str | None = None) -> list[list[float]]:
-    m = _embedder(model or settings().embed_model)
-    return [[float(x) for x in v] for v in m.embed(texts)]
+    m = model or settings().embed_model
+    payload = [f"passage: {t}" for t in texts] if _is_e5(m) else texts
+    return [[float(x) for x in v] for v in _embedder(m).embed(payload)]
 
 
 def warmup_embedder() -> None:

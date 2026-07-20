@@ -14,7 +14,7 @@ import os
 from functools import lru_cache
 from pathlib import Path
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -38,12 +38,16 @@ class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
     # --- Vault + lokale App-DB (lokale Variante) ---
-    # Der Vault (Docs + LanceDB-Index) ist portabel; Default lokal, per Env auf
-    # die NAS zeigbar (RAG_VAULT_PATH). appstate.sqlite bleibt IMMER lokal.
-    vault_path: Path = _DEFAULT_VAULT
+    # Der Vault (Docs + LanceDB-Index) ist portabel; Default lokal, per Env
+    # RAG_VAULT_PATH auf die NAS zeigbar (setzt die Desktop-Shell aus
+    # app-settings.json). appstate.sqlite bleibt IMMER lokal.
+    vault_path: Path = Field(default=_DEFAULT_VAULT, validation_alias="RAG_VAULT_PATH")
 
     # --- Embeddings (fastembed/ONNX, kein Ollama) ---
-    embed_model: str = "BAAI/bge-m3"              # fastembed-Modell-ID (ONNX)
+    # multilingual-e5-large (1024-dim, mehrsprachig/DE) — bge-m3 ist in fastembeds
+    # Dense-TextEmbedding NICHT verfügbar; e5-large ist das beste unterstützte
+    # mehrsprachige Modell. e5 verlangt Query/Passage-Präfixe (siehe factory).
+    embed_model: str = "intfloat/multilingual-e5-large"
 
     # --- App ---
     app_secret_key: str = "local-rag-os-secret"   # lokal; OAuth ist ohnehin aus
@@ -57,6 +61,9 @@ class Settings(BaseSettings):
     # Getaggte Versionen ("current"/"prev") sind vor Cleanup HART geschützt;
     # ungetaggte Alt-Versionen werden best-effort nach dieser Frist geräumt.
     publish_cleanup_grace_days: int = 7
+    # Reader (M8e): Intervall (Sek.), in dem der lokale Cache mit der
+    # veröffentlichten Vault-Version resynchronisiert wird.
+    reader_refresh_interval_sec: int = 300
     query_log_keep_days: int = 90           # DSGVO-Speicherbegrenzung; 0 = nie löschen
     docs_enabled: bool = False              # /docs + /openapi.json nur wenn true
     rerank_enabled: bool = True             # Post-Retrieval-Reranker (BGE) an/aus
@@ -68,9 +75,11 @@ class Settings(BaseSettings):
     # Parsing-Backend: "docling" (layout-aware, Tabellen-/OCR-treu) ist der Standard
     # der lokalen Variante; "legacy" nur als Notfall-Fallback.
     ingest_backend: str = "docling"
-    # Prozess-Rolle: lokal immer "all" (ein Prozess). "ingest"/"api" waren der
-    # Docker-Worker-Split (entfällt mit M6 → In-Process-Task).
-    service_role: str = "all"
+    # Prozess-/Installer-Rolle (M8e): "writer" = voller Knoten (Ingest+Query,
+    # schreibt neue Vault-Versionen) · "reader" = schlanker Query-Knoten (liest
+    # den lokalen Cache, kein Docling/torch, kein Watcher/Nachtlauf). Setzt die
+    # Shell via RAG_SERVICE_ROLE aus app-settings.json / Installer-Default.
+    service_role: str = Field(default="writer", validation_alias="RAG_SERVICE_ROLE")
     log_level: str = "INFO"
     rag_domain: str = "localhost"          # für CORS + Cookies
 
@@ -97,10 +106,21 @@ class Settings(BaseSettings):
     reorg_dominant_folder_ratio: float = 0.6
 
     @property
+    def is_reader(self) -> bool:
+        """Schlanker Leser-Knoten (query-only, liest lokalen Cache)."""
+        return self.service_role == "reader"
+
+    @property
     def runs_ingest_worker(self) -> bool:
-        return self.service_role == "all"
+        """Writer betreibt Ingest-Queue + Watcher; Reader nicht."""
+        return not self.is_reader
 
     # --- Lokale Speicher-Pfade (abgeleitet) ---
+    @property
+    def app_settings_path(self) -> Path:
+        """Lokale Shell-Einstellungen (Vault-Pfad + Rolle), pro Rechner, NICHT im Vault."""
+        return _APPDATA / "app-settings.json"
+
     @property
     def ragos_dir(self) -> Path:
         """Versteckter App-Ordner im Vault (wie .obsidian/)."""
@@ -110,6 +130,17 @@ class Settings(BaseSettings):
     def lancedb_uri(self) -> str:
         """LanceDB-Dataset im Vault (der EINZIGE Wissensspeicher, M3)."""
         return str(self.ragos_dir / "index.lance")
+
+    @property
+    def models_dir(self) -> Path:
+        """Gebackene/heruntergeladene KI-Modelle (M8d), pro Rechner."""
+        return _APPDATA / "models"
+
+    @property
+    def embed_cache_dir(self) -> str:
+        """fastembed-Cache (bge-m3). Der Installer legt das gebackene Modell hier ab
+        (Hybrid); fehlt es, lädt fastembed beim ersten Start hierher (First-Run)."""
+        return str(self.models_dir / "fastembed")
 
     @property
     def reader_cache_uri(self) -> str:

@@ -1,10 +1,11 @@
 [project]
 name = "sima-rag"
 version = "0.1.0"
-description = "Self-hosted RAG backend with MCP server"
-requires-python = ">=3.12"
+description = "Lokaler, Docker-freier Normen-/Richtlinien-Wissensspeicher (RAG) mit MCP-Server"
+requires-python = ">=3.14"
 dependencies = [
-    # Web-Framework
+    # --- Basis: von BEIDEN Installern gebraucht (Schreiber + Leser) ---
+    # Web-Framework + Shell-HTTP
     "fastapi>=0.115",
     "uvicorn[standard]>=0.32",
     "python-multipart>=0.0.17",
@@ -15,43 +16,60 @@ dependencies = [
     "pydantic-settings>=2.6",
     "structlog>=24.4",
 
-    # Datenbank
+    # Lokale App-DB (appstate.sqlite)
     "sqlalchemy[asyncio]>=2.0",
-    "asyncpg>=0.30",
+    "aiosqlite>=0.20",
+    "greenlet>=3.1",
 
-    # Auth
+    # Auth (Session-Token / API-Keys)
     "bcrypt>=4.2",
     "python-jose[cryptography]>=3.3",
 
-    # RAG / Pipeline
-    "haystack-ai>=2.8",
-    "qdrant-haystack>=7.0",
-    "ollama-haystack>=2.1",
-    "fastembed-haystack>=1.4",       # BM25-Sparse-Vektoren für Hybrid-Suche
-
-    # Parser
-    "pymupdf>=1.24",                 # PDF
-    "python-docx>=1.1",              # DOCX
-    "openpyxl>=3.1",                 # XLSX
-    "beautifulsoup4>=4.12",          # HTML
-    "python-magic>=0.4",             # MIME-Detection
-    "ocrmypdf>=16.0",                # OCR für gescannte PDFs
-    "fpdf2>=2.7",                    # PDF-Export aus Text (Welle 5)
-
-    # Reranker (Welle 6 → M1.3: torch-frei via ONNX-Runtime)
+    # Wissensspeicher + Retrieval (LanceDB + ONNX-Embeddings/Reranker)
+    "lancedb>=0.34",
+    "fastembed>=0.8",                # dense bge-m3 (ONNX), multilingual/DE
     "onnxruntime>=1.19",             # INT8-ONNX-Inferenz (bge-reranker-v2-m3), CPU
-    "transformers>=4.44",            # nur AutoTokenizer (kein torch nötig)
+    "transformers>=4.44",            # nur AutoTokenizer (kein torch)
     "numpy>=1.26",
+    "pyarrow>=17.0",                 # LanceDB-Schema (explizit)
 
-    # Datei-Überwachung
-    "watchdog>=6.0",
-
-    # Wissensgraph (Track D): Louvain-Community-Detection. PageRank läuft bewusst
-    # als eigene numpy-Power-Iteration (kein scipy → Slim-Image bleibt schlank).
+    # Wissensgraph (Track D): Louvain-Communities; PageRank = eigene numpy-Power-Iteration
     "networkx>=3.2",
 
-    # MCP
+    # Datei-Überwachung (Überwachungsordner, PollingObserver)
+    "watchdog>=6.0",
+
+    # MCP-Server
     "mcp>=1.1",
+
+    # Native Desktop-Shell (WebView2) + Tray/Toast (M8c)
+    "pywebview>=5.3",
+    "pystray>=0.19",
+    "pillow>=10.4",
+    "windows-toasts>=1.1; sys_platform == 'win32'",
+]
+
+[project.optional-dependencies]
+# --- Nur der SCHREIBER-Installer (Voll): Docling-Ingest + Legacy-Parser-Fallback.
+#     Der Leser braucht NICHTS davon (query-only, kein Ingest). ---
+writer = [
+    "docling>=2.0",
+    "torch>=2.4",
+    "torchvision>=0.19",
+    "rapidocr-onnxruntime>=1.3",
+    "pymupdf>=1.24",                 # PDF (legacy)
+    "python-docx>=1.1",              # DOCX (legacy)
+    "python-magic-bin>=0.4; sys_platform == 'win32'",  # libmagic-DLL für Windows
+    "openpyxl>=3.1",                 # XLSX (legacy)
+    "beautifulsoup4>=4.12",          # HTML (legacy)
+]
+
+# --- Entwicklung / Build ---
+dev = [
+    "ruff>=0.6",
+    "pyinstaller>=6.10",
+    "pillow>=10.4",                  # Icon-Generierung (build/make-icon.py)
+    "optimum[onnxruntime]>=1.20",    # Reranker-ONNX-Export (build/fetch-models.py)
 ]
 
 [build-system]
@@ -63,4 +81,4 @@ include = ["api*", "auth*", "backup*", "db*", "export*", "graph*", "ingest*", "m
 
 [tool.ruff]
 line-length = 100
-target-version = "py312"
+target-version = "py314"

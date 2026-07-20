@@ -44,8 +44,10 @@ Thumbs.db
 *.db
 # Test-Vault / lokale Daten
 /vault/
-# PyInstaller / Inno-Setup Build-Artefakte
-/build/
+# PyInstaller / Inno-Setup Build-Artefakte (NUR generierte Teile — die Quell-
+# Build-Dateien build/*.spec/*.iss/*.ps1/*.py + build/assets/ragos.ico bleiben im Repo)
+/build/models/
+/build/redist/
 /dist/
 /installer_output/
 # Modell-/HF-Caches, falls lokal abgelegt

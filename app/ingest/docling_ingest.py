@@ -16,9 +16,10 @@ from typing import Any
 from doc_ingest import IngestConfig, IngestResult
 from doc_ingest import ingest as _docling_ingest
 
-# HF-Tokenizer-ID des Ziel-Embedding-Modells (bge-m3). Der Ollama-Tag ist "bge-m3",
-# der HuggingFace-Tokenizer heisst "BAAI/bge-m3" — fuer den HybridChunker gebraucht.
-_TOKENIZER = "BAAI/bge-m3"
+# HF-Tokenizer-ID des Ziel-Embedding-Modells (multilingual-e5-large) — der
+# HybridChunker budgetiert Chunks nach dessen Tokenizer, damit sie in das
+# 512-Token-Fenster von e5 passen (kein Truncation beim Embedden).
+_TOKENIZER = "intfloat/multilingual-e5-large"
 
 
 def run_docling(path: Path) -> IngestResult:

@@ -44,7 +44,7 @@ def main() -> None:
         if os.path.exists(p):
             os.remove(p)
             print(f"  fp32-Rest entfernt: {stale}")
-    print(f"reranker ONNX exportiert + INT8-quantisiert (nur INT8 behalten) → {OUT}")
+    print(f"reranker ONNX exportiert + INT8-quantisiert (nur INT8 behalten) -> {OUT}")
 
 
 if __name__ == "__main__":

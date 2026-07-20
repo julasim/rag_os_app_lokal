@@ -20,8 +20,12 @@ from watchdog.events import FileSystemEvent, FileSystemEventHandler
 from watchdog.observers.polling import PollingObserver
 
 from config import settings
-from ingest.pipeline import ingest_file
 from logger import log
+
+# `ingest_file` wird bewusst LAZY in `_process` importiert (nicht auf Modulebene):
+# `ingest.pipeline` zieht die schwere Writer-Last (docling/torch/Legacy-Parser).
+# Der Watcher läuft nur im Writer, aber so bleibt allein der Import des Moduls
+# (z.B. beim Import-Graph-Test des schlanken Lesers) frei von diesen Deps.
 
 # Starke Referenzen auf laufende _process-Tasks halten — sonst kann der GC einen
 # per create_task gestarteten Task vor Abschluss einsammeln (die 2 s-„Ruhe"-Pause
@@ -65,6 +69,8 @@ async def _process(path: Path) -> None:
 
         # Ordnerpfad aus dem relativen Pfad ableiten (ohne Dateiname)
         folder = "/" + "/".join(parts[:-1]) + "/" if len(parts) > 1 else "/"
+
+        from ingest.pipeline import ingest_file   # lazy: schwere Writer-Last
 
         log.info("watcher.ingest", folder=folder, file=path.name)
         await ingest_file(

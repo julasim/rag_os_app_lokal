@@ -87,6 +87,15 @@ def checkout_current(tbl):
     return tbl
 
 
+def refresh_reader_cache() -> str:
+    """Reader (M8e): zieht das veröffentlichte Vault-Dataset frisch in den lokalen
+    Cache und verwirft das Store-Handle, damit die nächste Query die neue Version
+    sieht. Blockierend → vom Aufrufer in `asyncio.to_thread`. Gibt den Cache-Pfad."""
+    path = sync_reader_cache()
+    store.invalidate()
+    return path
+
+
 def sync_reader_cache() -> str:
     """Leser: kopiert das (getaggte) Vault-Dataset in den lokalen Cache und gibt den
     Cache-Pfad zurück. SMB nur Transport; Live-Query läuft NIE über SMB.

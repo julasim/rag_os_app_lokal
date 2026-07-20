@@ -27,7 +27,6 @@ from auth.dependencies import AuthContext, require_any_auth
 from config import settings
 from db.models import Document
 from db.session import get_session
-from ingest.parsers import parse_file
 from ingest.queue import enqueue_files
 from logger import log
 from pipelines.vector_ops import move_document
@@ -403,6 +402,8 @@ async def _store_snippet(doc_id: str, max_chars: int = 300) -> str:
 async def _parse_snippet(path: Path, max_chars: int = 300) -> str:
     """Liest erste Seite einer Datei für Text-Snippet (ohne Ingest)."""
     try:
+        from ingest.parsers import parse_file   # lazy: fitz/magic (nur Writer)
+
         parsed = await asyncio.to_thread(parse_file, path)
         return (parsed.full_text or "")[:max_chars]
     except Exception as exc:

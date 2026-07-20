@@ -66,18 +66,36 @@ def _arrow_schema(vector_dim: int) -> pa.Schema:
 _lock = threading.Lock()
 
 
+def _uri() -> str:
+    """Writer → Vault-Dataset (schreibt neue Versionen); Reader → lokaler Cache (M7,
+    SMB nur Transport). Die Rolle kommt aus settings().is_reader."""
+    s = settings()
+    return s.reader_cache_uri if s.is_reader else s.lancedb_uri
+
+
 @lru_cache(maxsize=1)
 def _db():
-    os.makedirs(settings().ragos_dir, exist_ok=True)
-    return lancedb.connect(settings().lancedb_uri)
+    uri = _uri()
+    os.makedirs(os.path.dirname(uri), exist_ok=True)
+    return lancedb.connect(uri)
 
 
 def _open():
-    """Öffnet die chunks-Tabelle oder None, wenn noch nicht angelegt."""
+    """Öffnet die chunks-Tabelle oder None, wenn noch nicht angelegt. Der Reader
+    pinnt die veröffentlichte `current`-Version (M7 checkout_current)."""
     db = _db()
     if TABLE not in db.table_names():
         return None
-    return db.open_table(TABLE)
+    tbl = db.open_table(TABLE)
+    if settings().is_reader:
+        from pipelines import publish
+        publish.checkout_current(tbl)
+    return tbl
+
+
+def invalidate() -> None:
+    """DB-Handle verwerfen — nach einem Reader-Cache-Refresh (Dataset-Dir-Swap)."""
+    _db.cache_clear()
 
 
 def _ensure_fts(tbl) -> None:

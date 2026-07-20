@@ -30,9 +30,9 @@ from api import (
 )
 from config import settings
 from db.session import dispose, init_db
-from ingest.queue import queue_worker_loop
-from ingest.watcher import FolderWatcher
 from logger import log, setup_logging
+# ingest.queue / ingest.watcher werden LAZY im Writer-Zweig des Lifespan importiert
+# (ziehen die schwere Docling/torch/Legacy-Parser-Last) → der Leser bleibt schlank.
 from mcp_server import build_mcp_app, MCPAuthMiddleware
 from mcp_server.ratelimit import MCPRateLimitMiddleware
 from pipelines.factory import ensure_collection
@@ -91,6 +91,26 @@ async def _warmup_models() -> None:
         log.warning("warmup.failed", error=str(e))
 
 
+async def _reader_refresh_loop(stop_event: asyncio.Event) -> None:
+    """Reader (M8e): hält den lokalen Cache periodisch mit der veröffentlichten
+    Vault-Version (`current`-Tag) synchron. Writer nutzt diesen Loop nicht."""
+    from pipelines.publish import refresh_reader_cache
+    interval = max(30, settings().reader_refresh_interval_sec)
+    log.info("reader.refresh_loop_started", interval_sec=interval)
+    while not stop_event.is_set():
+        try:
+            await asyncio.wait_for(stop_event.wait(), timeout=interval)
+            break
+        except asyncio.TimeoutError:
+            pass
+        try:
+            await asyncio.to_thread(refresh_reader_cache)
+            log.info("reader.cache_refreshed")
+        except Exception as e:  # noqa: BLE001 — Refresh darf den Reader nie kippen
+            log.warning("reader.cache_refresh_failed", error=str(e))
+    log.info("reader.refresh_loop_stopped")
+
+
 # ---------------------------------------------------------------------------
 # Lifecycle
 # ---------------------------------------------------------------------------
@@ -118,13 +138,27 @@ async def lifespan(app: FastAPI):
     # Referenz halten — sonst kann der GC den Task vor Abschluss einsammeln.
     warmup_task = asyncio.create_task(_warmup_models(), name="model-warmup")
 
-    # Folder-Watcher + Ingest-Queue-Worker — nur bei Rolle 'all' IN diesem
-    # Prozess. Bei Rolle 'api' übernimmt sie der separate rag-ingest-Container
-    # (Track C3b — worker.py), damit das Serving-Image die Ingest-Last nicht trägt.
-    watcher: FolderWatcher | None = None
+    # --- Rollen-abhängige Hintergrund-Tasks (M8e) ---
+    # Writer: Überwachungsordner + Ingest-Queue + Nachtlauf (Maintenance/Backup+Publish).
+    # Reader: nur den lokalen Cache mit der veröffentlichten Vault-Version synchron halten
+    # (kein Ingest, kein Docling/torch, keine Wartung/Backup).
+    watcher = None
     queue_stop: asyncio.Event | None = None
     queue_task: asyncio.Task | None = None
+    maint_stop: asyncio.Event | None = None
+    maint_task: asyncio.Task | None = None
+    backup_stop: asyncio.Event | None = None
+    backup_task: asyncio.Task | None = None
+    reader_stop: asyncio.Event | None = None
+    reader_task: asyncio.Task | None = None
+
     if settings().runs_ingest_worker:
+        # Lazy-Importe: ziehen die schwere Writer-Last (Docling/torch/Legacy-Parser).
+        from backup.engine import nightly_backup_loop
+        from ingest.queue import queue_worker_loop
+        from ingest.watcher import FolderWatcher
+        from maintenance.engine import nightly_maintenance_loop
+
         watcher = FolderWatcher()
         try:
             watcher.start()
@@ -134,23 +168,27 @@ async def lifespan(app: FastAPI):
         queue_task = asyncio.create_task(
             queue_worker_loop(queue_stop), name="ingest-queue-worker"
         )
+        maint_stop = asyncio.Event()
+        maint_task = asyncio.create_task(
+            nightly_maintenance_loop(maint_stop), name="maintenance-nightly"
+        )
+        settings().backup_dir.mkdir(parents=True, exist_ok=True)
+        backup_stop = asyncio.Event()
+        backup_task = asyncio.create_task(
+            nightly_backup_loop(backup_stop), name="backup-nightly"
+        )
     else:
-        log.info("ingest.worker.delegated", service_role=settings().service_role)
-
-    # Nachtlauf Maintenance (Welle 8 — 03:00 UTC)
-    from maintenance.engine import nightly_maintenance_loop
-    maint_stop = asyncio.Event()
-    maint_task = asyncio.create_task(
-        nightly_maintenance_loop(maint_stop), name="maintenance-nightly"
-    )
-
-    # Nachtlauf Backup (Welle 9 — 02:00 UTC)
-    settings().backup_dir.mkdir(parents=True, exist_ok=True)
-    from backup.engine import nightly_backup_loop
-    backup_stop = asyncio.Event()
-    backup_task = asyncio.create_task(
-        nightly_backup_loop(backup_stop), name="backup-nightly"
-    )
+        # Reader: einmal jetzt synchronisieren, dann periodisch (M8e).
+        from pipelines.publish import refresh_reader_cache
+        try:
+            await asyncio.to_thread(refresh_reader_cache)
+            log.info("reader.cache_synced")
+        except Exception as e:
+            log.warning("reader.cache_sync_failed", error=str(e))
+        reader_stop = asyncio.Event()
+        reader_task = asyncio.create_task(
+            _reader_refresh_loop(reader_stop), name="reader-cache-refresh"
+        )
 
     # Wichtig: MCP-Session-Manager muss explizit laufen, da die gemountete
     # Sub-App sonst keinen eigenen Lifespan bekommt.
@@ -160,24 +198,16 @@ async def lifespan(app: FastAPI):
 
     # Shutdown
     warmup_task.cancel()  # i.d.R. längst fertig; Cancel eines fertigen Tasks ist No-op
-    if queue_stop is not None:
-        queue_stop.set()
-    maint_stop.set()
-    backup_stop.set()
-    if queue_task is not None:
-        try:
-            await asyncio.wait_for(queue_task, timeout=10)
-        except asyncio.TimeoutError:
-            queue_task.cancel()
-            log.warning("ingest.queue.worker_force_stopped")
-    try:
-        await asyncio.wait_for(maint_task, timeout=5)
-    except asyncio.TimeoutError:
-        maint_task.cancel()
-    try:
-        await asyncio.wait_for(backup_task, timeout=5)
-    except asyncio.TimeoutError:
-        backup_task.cancel()
+    for ev in (queue_stop, maint_stop, backup_stop, reader_stop):
+        if ev is not None:
+            ev.set()
+    for task in (queue_task, maint_task, backup_task, reader_task):
+        if task is not None:
+            try:
+                await asyncio.wait_for(task, timeout=10)
+            except asyncio.TimeoutError:
+                task.cancel()
+                log.warning("lifespan.task_force_stopped", task=task.get_name())
     if watcher is not None:
         watcher.stop()
     await dispose()
