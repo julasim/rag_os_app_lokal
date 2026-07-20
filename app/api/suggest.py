@@ -2,7 +2,7 @@
 Ordnerstruktur-Vorschläge via KI.
 
 Endpunkte:
-  POST /api/suggest/from-docs  → analysiert bestehende Dokumente via Qdrant-Snippets
+  POST /api/suggest/from-docs  → analysiert bestehende Dokumente via LanceDB-Snippets
   POST /api/suggest/from-zip   → extrahiert + analysiert ZIP (kein Ingest)
   POST /api/suggest/apply      → bestätigte Vorschläge auf bestehende Dokumente anwenden
   POST /api/suggest/apply-zip  → analysiertes ZIP mit bestätigten Ordnern ingestieren
@@ -113,7 +113,7 @@ async def suggest_from_docs(
     payload: SuggestFromDocsRequest,
     ctx: AuthContext = Depends(require_any_auth),
 ):
-    """Schlägt Ordner für bereits indexierte Dokumente vor (via Qdrant-Textschnipsel)."""
+    """Schlägt Ordner für bereits indexierte Dokumente vor (via LanceDB-Textschnipsel)."""
     if not payload.doc_ids:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "Keine Dokument-IDs angegeben")
     if len(payload.doc_ids) > 20:
@@ -255,8 +255,8 @@ async def apply_suggestions(
     """
     Setzt bestätigte Ordner-Vorschläge für bestehende Dokumente um.
 
-    Verschiebt über die atomare `move_document()` (Postgres + DocumentChunk +
-    Qdrant-Payload konsistent — kein Split-Brain). Pro Dokument wird die Ordner-ACL
+    Verschiebt über die atomare `move_document()` (SQLite + DocumentChunk +
+    LanceDB-Payload konsistent — kein Split-Brain). Pro Dokument wird die Ordner-ACL
     auf **Quell- UND Zielordner** geprüft (`can_access_folder`), damit ein
     eingeschränkter Write-Key keine fremden Docs verschieben kann.
     """
@@ -284,7 +284,7 @@ async def apply_suggestions(
             if doc.folder_path == new_folder:
                 moved += 1
                 continue
-            # Atomarer Move (Postgres + DocumentChunk + Qdrant).
+            # Atomarer Move (SQLite + DocumentChunk + LanceDB).
             await move_document(doc_id, new_folder)
             moved += 1
         except Exception as exc:

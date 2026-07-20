@@ -136,8 +136,8 @@ async def accept_folder_suggestion(
     ctx: AuthContext = Depends(require_any_auth),
 ):
     """
-    Verschiebt das Dokument via atomarer `move_document()` (M0.2) — Postgres,
-    DocumentChunk UND Qdrant konsistent. Admin-only + **per-Doc-ACL** (Quell- UND
+    Verschiebt das Dokument via atomarer `move_document()` (M0.2) — SQLite,
+    DocumentChunk UND LanceDB konsistent. Admin-only + **per-Doc-ACL** (Quell- UND
     Zielordner). Reversibel über den `MaintenanceLog`-Undo (`folder_move`).
     """
     _require_admin(ctx)
@@ -287,24 +287,24 @@ async def accept_duplicate(
             select(Document).where(Document.id == suggestion.doc_id_remove)
         )
         if doc:
-            # Qdrant-Chunks ZUERST löschen — gemeinsame Funktion wie überall
+            # LanceDB-Chunks ZUERST löschen — gemeinsame Funktion wie überall
             # (`meta.doc_id`-Filter, nicht die Punkt-ID). Scheitert das, brechen
-            # wir ab und lassen Postgres-Row + Datei stehen: sonst bliebe der
+            # wir ab und lassen SQLite-Row + Datei stehen: sonst bliebe der
             # Vektor durchsuchbar, während das Doc "gelöscht" ist (Split-Brain,
             # DSGVO Art. 17) — genau der Fehler, den das alte `except`+weiterlaufen
             # verschluckte (zudem existierte `store.delete_by_filter` gar nicht).
-            from pipelines.vector_ops import delete_qdrant_chunks
+            from pipelines.vector_ops import delete_chunks
             try:
-                await asyncio.to_thread(delete_qdrant_chunks, doc.id)
+                await asyncio.to_thread(delete_chunks, doc.id)
             except Exception as e:
                 from logger import log
                 log.error(
-                    "maintenance.duplicate.qdrant_delete_failed",
+                    "maintenance.duplicate.chunks_delete_failed",
                     doc_id=str(doc.id), error=str(e),
                 )
                 raise HTTPException(
                     status.HTTP_500_INTERNAL_SERVER_ERROR,
-                    "Qdrant-Löschung fehlgeschlagen — Dokument NICHT gelöscht (kein Split-Brain)",
+                    "LanceDB-Löschung fehlgeschlagen — Dokument NICHT gelöscht (kein Split-Brain)",
                 ) from e
 
             import pathlib

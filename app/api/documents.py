@@ -46,7 +46,7 @@ from db.models import Document
 from db.session import get_session
 from ingest.queue import enqueue_files, get_job_status
 from logger import log
-from pipelines.vector_ops import delete_qdrant_chunks, move_document
+from pipelines.vector_ops import delete_chunks, move_document
 
 router = APIRouter(prefix="/api/documents", tags=["documents"])
 
@@ -526,8 +526,8 @@ async def patch_document(
         if payload.folder_path is not None:
             _require_folder_access(ctx, payload.folder_path)
 
-    # 2) Ordner-Move ATOMAR über die gemeinsame Move-Funktion (Postgres + Qdrant).
-    #    Früher wurde nur Postgres.folder_path gesetzt → Qdrant meta.folder blieb
+    # 2) Ordner-Move ATOMAR über die gemeinsame Move-Funktion (SQLite + LanceDB).
+    #    Früher wurde nur SQLite.folder_path gesetzt → LanceDB meta.folder blieb
     #    alt → das verschobene Dokument wurde unauffindbar (Split-Brain).
     if payload.folder_path is not None:
         await move_document(doc_id, payload.folder_path)
@@ -581,9 +581,9 @@ async def delete_folder(
 
     for doc in docs:
         try:
-            await asyncio.to_thread(delete_qdrant_chunks, doc.id)
+            await asyncio.to_thread(delete_chunks, doc.id)
         except Exception as e:
-            log.warning("delete_folder.qdrant_failed", doc_id=str(doc.id), error=str(e))
+            log.warning("delete_folder.chunks_failed", doc_id=str(doc.id), error=str(e))
 
         try:
             Path(doc.file_path).unlink(missing_ok=True)
@@ -612,9 +612,9 @@ async def delete_document(
             raise HTTPException(status.HTTP_404_NOT_FOUND)
 
         try:
-            await asyncio.to_thread(delete_qdrant_chunks, doc.id)
+            await asyncio.to_thread(delete_chunks, doc.id)
         except Exception as e:
-            log.warning("delete.qdrant_failed", doc_id=str(doc.id), error=str(e))
+            log.warning("delete.chunks_failed", doc_id=str(doc.id), error=str(e))
 
         try:
             Path(doc.file_path).unlink(missing_ok=True)
@@ -665,7 +665,7 @@ async def reindex_document_endpoint(
 
 
 # ---------------------------------------------------------------------------
-# Chunks aus Qdrant abrufen
+# Chunks aus LanceDB abrufen
 # ---------------------------------------------------------------------------
 class _ChunkResponse(BaseModel):
     id: str

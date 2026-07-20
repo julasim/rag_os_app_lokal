@@ -2,7 +2,7 @@
 Tag-Konsolidierung (Niedrigrisiko — autonom, CLAUDE.md §7).
 
 Kriterium: Levenshtein-Distanz ≤ 2 zwischen zwei Tags.
-Aktion: selteneren Tag durch häufigeren ersetzen (array_replace in Postgres).
+Aktion: selteneren Tag durch häufigeren ersetzen (Python-seitig auf der JSON-Tag-Liste).
 Audit: jede Aktion landet in maintenance_log mit 30-Tage-Undo-Fenster.
 """
 from __future__ import annotations

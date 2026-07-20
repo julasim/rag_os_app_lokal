@@ -1,14 +1,17 @@
 # SIMA RAG-System
 
-> ⚠️ **In Teilen VERALTET.** Quelle der Wahrheit ist **`CLAUDE.md`** (und die
-> aktuellen Pläne unter `~/.claude/plans/`). Dieses README beschreibt stellenweise
-> noch einen früheren Stand. Was **nicht mehr** stimmt:
-> - **Kein „Projekt"-Konzept mehr** (keine Collection-pro-Projekt, keine
->   Projekt-Whitelist) — nur noch Ordnerhierarchie + Tags.
-> - **Keine Streamlit-UI** — die Admin-UI ist eine React/Vite-App.
-> - **Suche ist MCP-only** — die REST-Endpunkte `/api/retrieve` und `/api/query`
->   sowie das MCP-Tool `rag_search` gibt es nicht mehr (nur `rag_retrieve`).
-> - **Kein OpenRouter/Cloud-LLM** — der Betrieb ist 100 % lokal (Ollama).
+> ⚠️ **STARK VERALTET (Stand 2026-07-20).** Dieses README beschreibt den alten
+> **VPS-Docker-Stack**. Die App ist inzwischen eine **native, Docker-freie
+> Windows-Desktop-App** — der gesamte Umbau (M1–M8) ist fertig und beide Installer
+> sind gebaut. **Quelle der Wahrheit: [BUILD-PLAN.md](BUILD-PLAN.md) + [CLAUDE.md](CLAUDE.md).**
+> Kurz, was JETZT gilt (statt des Textes unten):
+> - **Kein Docker/Postgres/Qdrant/Ollama/Haystack.** Ein `uvicorn`-Prozess in einer
+>   **pywebview/WebView2-Shell** (`app/desktop.py`), zwei Windows-Installer (Schreiber/Leser).
+> - **LanceDB = einziger Wissensspeicher** (im Vault) + lokales `appstate.sqlite`.
+> - **Embeddings: ONNX `intfloat/multilingual-e5-large`** (kein Ollama). Reranker als INT8-ONNX.
+> - **MCP: Bearer-only, read-only** (`rag_overview`/`rag_retrieve`/`norm_lookup`/…). UI mit
+>   lokalem Auto-Login (127.0.0.1). Tagging/Graph **deterministisch, LLM-frei**.
+> - Kein „Projekt"-Konzept (nur Ordner + Tags), Admin-UI ist React/Vite (kein Streamlit).
 
 Selbst-gehostetes, komplett lokales Retrieval-Augmented-Generation-System
 für die Wissens-Bestände von Julius Sima. Exponiert einen MCP-Server und eine

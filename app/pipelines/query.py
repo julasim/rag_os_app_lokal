@@ -9,7 +9,7 @@ Ein öffentlicher Einstiegspunkt:
         Antwort selbst. Die Ordner-ACL wird hier serverseitig erzwungen.
 
 Bewusst als Code (nicht YAML) umgesetzt, weil Haystack-YAMLs mit
-hybridem Qdrant + benutzerdefinierten Filtern noch nicht 100% glatt
+hybridem LanceDB + benutzerdefinierten Filtern noch nicht 100% glatt
 serialisierbar sind, und lesbarer Python-Code hier mehr wert ist.
 """
 from __future__ import annotations
@@ -62,7 +62,7 @@ class RetrieveChunk:
     doc_type: str | None = None
     norm_id: str | None = None
     doc_version: str | None = None
-    outdated: bool = False           # aus Postgres angereichert (Ablöse-Status)
+    outdated: bool = False           # aus SQLite angereichert (Ablöse-Status)
     superseded_by: str | None = None
 
 
@@ -81,7 +81,7 @@ def _build_access_filter(
     language: str | None = None,
 ) -> dict[str, Any] | None:
     """
-    Baut den Qdrant-Filter aus der ACL-Ordnerliste + optionalen Metadaten-Filtern.
+    Baut den LanceDB-Filter aus der ACL-Ordnerliste + optionalen Metadaten-Filtern.
 
       - folder_paths None → kein Ordner-Filter (unrestringierter Key ohne Wunsch).
       - folder_paths [..] → MatchAny auf `meta.folder`.
@@ -151,7 +151,7 @@ def _sanitize_chunks(
 ) -> list[RetrieveChunk]:
     """Sanitize-on-Serialize (M3f): jeder serialisierte Chunk MUSS ACL-sichtbar sein.
 
-    Für den reinen Hybrid-Pfad redundant (Qdrant-Filter greift schon), für die
+    Für den reinen Hybrid-Pfad redundant (LanceDB-Filter greift schon), für die
     Graph-Kandidaten (Fastpath/PPR) die **letzte, autoritative** Schranke: ein
     Chunk, dessen Ordner nicht in der aufgelösten ACL liegt, wird verworfen —
     unabhängig davon, wie er in die Kandidatenmenge kam. `folder_paths is None`
@@ -277,9 +277,9 @@ def _doc_to_chunk(d: HayDoc) -> RetrieveChunk:
 
 async def _annotate_status(chunks: list[RetrieveChunk]) -> None:
     """
-    Reichert `outdated`/`superseded_by` aus Postgres an (Single-Source-of-Truth).
+    Reichert `outdated`/`superseded_by` aus SQLite an (Single-Source-of-Truth).
 
-    Der Qdrant-Payload trägt den Ablöse-Status NICHT verlässlich (eine ältere
+    Der LanceDB-Payload trägt den Ablöse-Status NICHT verlässlich (eine ältere
     Fassung wird erst nachträglich als 'superseded' markiert, ihre Chunks bleiben
     aber unverändert). Darum den Status hier frisch aus der DB holen.
     """
@@ -329,8 +329,8 @@ async def run_retrieve(
       - `access_all` ist bool → **User/OAuth**-Pfad (`user_accessible_folder_paths`,
         fail-safe: `access_all=False` + leere Liste = NICHTS).
 
-    Optionale Filter: `doc_type`, `language` (Qdrant-Payload) sowie
-    `only_current` (blendet 'superseded'-Fassungen aus, frischer Postgres-Status).
+    Optionale Filter: `doc_type`, `language` (LanceDB-Payload) sowie
+    `only_current` (blendet 'superseded'-Fassungen aus, frischer SQLite-Status).
     """
     t0 = time.perf_counter()
     cfg = global_config()

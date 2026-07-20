@@ -186,7 +186,7 @@ class Document(Base):
 # ---------------------------------------------------------------------------
 # Kanonische Chunk-Schicht (Track C2b)
 #
-# Postgres = Source-of-Truth für Chunks; Qdrant ist der ABGELEITETE Vektor-Index.
+# SQLite = Source-of-Truth für Chunks; LanceDB ist der ABGELEITETE Vektor-Index.
 # `chunk_id` ist INHALTSBASIERT und meta-unabhängig → stabil bei Ordner-Moves
 # (nur Payload ändert sich, ID bricht nicht). Quelle für die Graph-Kanten
 # (Track D: references-Regex über `text`, section_path).

@@ -125,12 +125,12 @@ async def lifespan(app: FastAPI):
     # DB-Schema + Admin-User
     await init_db()
 
-    # Qdrant-Collection anlegen (einmalig beim Boot)
+    # Store-Collection sicherstellen (No-Op bei LanceDB — legt die Tabelle beim ersten Write an)
     try:
         ensure_collection()
-        log.info("qdrant.collection_ready")
+        log.info("store.collection_ready")
     except Exception as e:
-        log.warning("qdrant.collection_failed", error=str(e))
+        log.warning("store.collection_failed", error=str(e))
 
     # Modelle im HINTERGRUND vorwärmen (Reranker ~2,4 GB + Embedder), damit die
     # erste echte Suche nicht den Lade-/Download-Preis zahlt. Blockiert den

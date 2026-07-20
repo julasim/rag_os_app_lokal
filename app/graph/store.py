@@ -1,6 +1,6 @@
 """In-RAM-Snapshot des Wissensgraphs für das Retrieval (Track D / M3e).
 
-Der Graph wird **nicht pro Request** aus Postgres gelesen, sondern als
+Der Graph wird **nicht pro Request** aus SQLite gelesen, sondern als
 immutabler Snapshot in den Prozess-Speicher geladen und über ein billiges
 Versions-Token (Node-/Edge-Zahl + jüngste Zeitstempel) invalidiert. Zwischen
 zwei Checks liegt mindestens `graph_cache_ttl` Sekunden — im Hot-Path fällt

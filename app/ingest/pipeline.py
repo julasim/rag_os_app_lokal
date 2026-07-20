@@ -30,7 +30,7 @@ from db.session import get_session
 from ingest.chunker import chunk_document
 from ingest.parsers import parse_file
 from logger import log
-from pipelines.vector_ops import delete_qdrant_chunks
+from pipelines.vector_ops import delete_chunks
 
 
 # ---------------------------------------------------------------------------
@@ -73,24 +73,22 @@ async def reindex_document_file(
     folder_path: str,
     tags: list[str],
 ) -> None:
-    """Re-runs the ingest job for an existing document after clearing its Qdrant chunks."""
-    # Alte Chunks über den meta.doc_id-Filter löschen. NICHT
-    # delete_documents(document_ids=[doc_id]) — die Qdrant-Punkt-ID ist ein
-    # Content-Hash, nicht die doc_id; sonst blieben die alten Chunks im Index
-    # (Split-Brain, DSGVO). Siehe pipelines/vector_ops.py.
+    """Re-runs the ingest job for an existing document after clearing its LanceDB chunks."""
+    # Alte Chunks des Dokuments per doc_id aus LanceDB löschen (Orphan-Schutz
+    # gegen Split-Brain/DSGVO). Siehe pipelines/vector_ops.py.
     try:
-        await asyncio.to_thread(delete_qdrant_chunks, doc_id)
+        await asyncio.to_thread(delete_chunks, doc_id)
     except Exception as exc:
-        log.warning("reindex.qdrant_clear_failed", doc_id=str(doc_id), error=str(exc))
+        log.warning("reindex.chunks_clear_failed", doc_id=str(doc_id), error=str(exc))
     pcfg = global_config()
     await _run_ingest_job(doc_id, path, folder_path, tags, pcfg)
 
 
 def _chunks_from_rows(doc: Document, rows: list) -> list[dict]:
     """Rekonstruiert die `{text, metadata}`-Chunk-Dicts aus der kanonischen
-    Postgres-Chunk-Schicht — im EXAKTEN Ingest-Payload-Format.
+    SQLite-Chunk-Schicht — im EXAKTEN Ingest-Payload-Format.
 
-    Parität zum Normal-Ingest ist zwingend: die Qdrant-Payloads müssen identisch
+    Parität zum Normal-Ingest ist zwingend: die LanceDB-Payloads müssen identisch
     zu denen aus `_run_ingest_job` (`base_meta`) + `docling_to_chunks` sein.
     Insbesondere:
 
@@ -137,16 +135,14 @@ def _chunks_from_rows(doc: Document, rows: list) -> list[dict]:
 
 async def reindex_all(reset: bool = True, reparse_missing: bool = True) -> dict:
     """
-    Baut den Qdrant-Index aus der kanonischen Postgres-Chunk-Schicht
+    Baut den LanceDB-Index aus der kanonischen SQLite-Chunk-Schicht
     (`document_chunks ⨝ documents`) neu auf — **ohne Re-Parse** (nur
-    Re-Embedding). Postgres bleibt Source-of-Truth; Qdrant ist der abgeleitete
-    Index. Das entkoppelt Reindex von den schweren Parse-Deps (Docling/PyMuPDF)
-    und ist zugleich das Fallback-Werkzeug für die spätere Qdrant-Quantisierung.
+    Re-Embedding). SQLite bleibt Source-of-Truth; LanceDB ist der abgeleitete
+    Index. Das entkoppelt Reindex von den schweren Parse-Deps (Docling/PyMuPDF).
 
-    Bei `reset=True` wird die Collection einmal neu angelegt — nötig für den
-    Hybrid-/Sparse-Schema-Wechsel (die alte reine-dense-Collection hat keinen
-    Sparse-Vektor). Bei `reset=False` werden pro Dokument erst die alten
-    Qdrant-Chunks über den `meta.doc_id`-Filter gelöscht (Orphan-Schutz,
+    Bei `reset=True` wird die `chunks`-Tabelle einmal neu angelegt (z.B. nach
+    einem Embedding-Modell-/Dimensions-Wechsel). Bei `reset=False` werden pro
+    Dokument erst die alten Chunks per `doc_id` gelöscht (Orphan-Schutz,
     idempotent), dann neu geschrieben.
 
     Dokumente OHNE kanonische Chunks (Pre-C2b-Ingest): mit `reparse_missing=True`
@@ -227,13 +223,13 @@ async def reindex_all(reset: bool = True, reparse_missing: bool = True) -> dict:
                 skipped += 1
             continue
 
-        # From-chunks-Pfad: KEIN Re-Parse — nur Re-Embedding aus Postgres.
+        # From-chunks-Pfad: KEIN Re-Parse — nur Re-Embedding aus SQLite.
         try:
             chunks = _chunks_from_rows(doc, rows)
             if not reset:
                 # Orphan-Schutz: alte Punkte dieses Docs gezielt entfernen
                 # (bei reset ist die ganze Collection ohnehin frisch).
-                await asyncio.to_thread(delete_qdrant_chunks, doc.id)
+                await asyncio.to_thread(delete_chunks, doc.id)
             await _embed_and_store(chunks, embed_model)
             from_chunks += 1
         except Exception as e:
@@ -271,7 +267,7 @@ async def ingest_file(
     original_filename: str | None = None,
 ) -> UUID:
     """
-    Nimmt eine Datei, indexiert sie in Qdrant, schreibt Postgres-Eintrag.
+    Nimmt eine Datei, indexiert sie in LanceDB, schreibt SQLite-Eintrag.
     Gibt die Document-UUID zurück.
 
     Ist idempotent bzgl. doc_hash: bei Duplikat wird die
@@ -490,14 +486,14 @@ async def _run_ingest_job(
         if not chunks:
             raise ValueError("No extractable text / zero chunks")
 
-        # 3b. Chunks KANONISCH nach Postgres (Track C2b) — VOR Qdrant (abgeleiteter Index).
-        #     Postgres = Wahrheit; kein Split-Brain. Quelle für den Graphen (Track D).
+        # 3b. Chunks KANONISCH nach SQLite (Track C2b) — VOR LanceDB (abgeleiteter Index).
+        #     SQLite = Wahrheit; kein Split-Brain. Quelle für den Graphen (Track D).
         await _store_document_chunks(doc_id, folder_path, chunks)
 
-        # 4. Embedden + in Qdrant schreiben
+        # 4. Embedden + in LanceDB schreiben
         await _embed_and_store(chunks, cfg.embed_model)
 
-        # 5. Postgres-Status: indexed (Tags + MIME wurden schon oben geschrieben)
+        # 5. SQLite-Status: indexed (Tags + MIME wurden schon oben geschrieben)
         duration_ms = int((time.perf_counter() - start) * 1000)
         async with get_session() as s:
             await s.execute(
@@ -554,10 +550,10 @@ def _gen_chunk_id(doc_id: str, section_path, text: str) -> str:
 async def _store_document_chunks(
     doc_id: UUID, folder_path: str, chunks: list[dict]
 ) -> None:
-    """Schreibt die Chunks kanonisch nach Postgres (`document_chunks`).
+    """Schreibt die Chunks kanonisch nach SQLite (`document_chunks`).
 
     Idempotent: löscht bestehende Chunks des Dokuments und schreibt neu (Reindex/
-    Re-Ingest-fest). Postgres = Source-of-Truth, Qdrant wird daraus abgeleitet.
+    Re-Ingest-fest). SQLite = Source-of-Truth, LanceDB wird daraus abgeleitet.
     Dedup pro `chunk_id` (identischer Text im selben Abschnitt → gleiche ID).
     """
     from db.models import DocumentChunk

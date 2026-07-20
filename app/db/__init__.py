@@ -1,4 +1,4 @@
-"""Datenbank-Schicht: async SQLAlchemy für Postgres."""
+"""Datenbank-Schicht: async SQLAlchemy auf SQLite (appstate). Der Korpus (Chunks + Vektoren) liegt in LanceDB, nicht hier."""
 from db.session import get_session, init_db
 from db.models import (
     ApiKey,

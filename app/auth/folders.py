@@ -9,8 +9,8 @@ Warum hier zentral?
     ausschließlich die Funktionen hier.
 
 Modell (CLAUDE.md §4): `folder_path` ist freier Text, VS-Code-artig nestbar.
-Postgres ist Wahrheit über die vorhandenen Ordner; die tatsächlich
-durchsuchbare Ordnerliste wird von dort aufgelöst (nicht aus Qdrant).
+SQLite ist Wahrheit über die vorhandenen Ordner; die tatsächlich
+durchsuchbare Ordnerliste wird von dort aufgelöst (nicht aus LanceDB).
 
 Zwei bewusst GETRENNTE Semantiken (Track E — nicht vermischen!):
 
@@ -112,7 +112,7 @@ async def accessible_folder_paths(
     Rückgabe (der Aufrufer MUSS alle drei Fälle behandeln):
       * ``None`` → keine Einschränkung → keinen Ordner-Filter bauen.
       * ``[]``   → nichts zugänglich → **leer** antworten, NICHT ungefiltert suchen.
-      * ``[..]`` → konkrete Ordnerliste für einen Qdrant-``in``-Filter auf
+      * ``[..]`` → konkrete Ordnerliste für einen LanceDB-``in``-Filter auf
         ``meta.folder``.
     """
     restricted = bool(allowed_folders)

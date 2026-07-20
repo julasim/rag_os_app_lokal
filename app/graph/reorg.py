@@ -188,7 +188,7 @@ async def accept_suggestion(suggestion_id: uuid.UUID) -> dict | None:
         current = sug.current_folder
         target = sug.suggested_folder
 
-    # Atomarer Move (eigene Transaktion; Postgres+Chunks+Qdrant konsistent).
+    # Atomarer Move (eigene Transaktion; SQLite+Chunks+LanceDB konsistent).
     new_folder = await move_document(doc_id, target)
 
     async with get_session() as s:

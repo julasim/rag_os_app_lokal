@@ -1,4 +1,4 @@
-"""Ingest: Datei → geparster Text → Chunks → Qdrant.
+"""Ingest: Datei → geparster Text → Chunks → LanceDB.
 
 Re-Exports laufen LAZY über ``__getattr__`` (Dep-Severance C3b): das bloße
 ``import ingest`` (Package-Init) zieht damit NICHT mehr ``ingest.pipeline`` bzw.

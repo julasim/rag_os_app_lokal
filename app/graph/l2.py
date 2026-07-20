@@ -4,7 +4,7 @@ Zwei symmetrische Relationen auf Dokument-Ebene (als EINE ungeordnete Kante
 gespeichert, `src_key` lexikografisch < `tgt_key`):
 
   similar_to  Semantische Nähe: Cosine der Doc-Zentroide (Mittel der dichten
-              bge-m3-Chunk-Vektoren aus Qdrant), sparsifiziert über **mutual-kNN**
+              bge-m3-Chunk-Vektoren aus LanceDB), sparsifiziert über **mutual-kNN**
               (A in Top-k von B UND B in Top-k von A) + Schwelle τ.
   near_dup    Beinah-Duplikate: **eigene MinHash** (128 Permutationen) über
               Wort-Shingles des Doc-Texts, Kandidaten via **LSH (b,r)=16×8**,
@@ -15,9 +15,9 @@ idempotente Kanten. Voller L2-Rebuild (löscht nur `layer='L2'`; L1 unberührt).
 Setzt voraus, dass **L1 die document-Nodes bereits angelegt** hat — der
 Rebuild-Endpoint und der Nachtlauf rufen L1 vor L2.
 
-Bewusste Abweichung vom Plan-Wortlaut „Qdrant-kNN": bei der (kleinen) Büro-
+Bewusste Abweichung vom Plan-Wortlaut „LanceDB-kNN": bei der (kleinen) Büro-
 Brain-Korpusgröße werden die Zentroide **exakt** in numpy verglichen (besser als
-ANN und deterministisch). Bei starkem Wachstum auf Qdrant-ANN umstellbar.
+ANN und deterministisch). Bei starkem Wachstum auf LanceDB-ANN umstellbar.
 """
 from __future__ import annotations
 

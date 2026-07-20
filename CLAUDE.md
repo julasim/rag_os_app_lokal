@@ -6,9 +6,57 @@ Sie enthält das, was beim Code-Lesen *nicht* offensichtlich ist.
 
 > **An Claude:** Bevor du die Arbeit in diesem Ordner beendest, aktualisiere
 > diese Datei mit neuen Entscheidungen/Stand — besonders §13 (Sicherheit).
-> **Zuletzt aktualisiert: 2026-07-16**
+> **Zuletzt aktualisiert: 2026-07-20**
+
+> ## ⚠️ STATUS 2026-07-20 — nativer Docker-freier Umbau KOMPLETT (M1–M8)
 >
+> Diese App ist **kein VPS-Docker-Stack mehr**. Der gesamte Umbau (Masterplan
+> M1–M8) ist fertig, verifiziert und auf `main` (`c5ffd9b`). **Große Teile des
+> Bodys unten (Qdrant/Postgres/Ollama/Haystack/OAuth/Docker/Edge-Proxy) sind
+> HISTORISCH** — beim Lesen ignorieren bzw. gegen den echten Code prüfen.
+> **Quelle der Wahrheit für die lokale Architektur: [BUILD-PLAN.md](BUILD-PLAN.md)**
+> (Fortschrittstabelle + Meilensteine). Aktueller Stack in einem Satz:
+>
+> - **Ein Prozess, kein Docker.** FastAPI + MCP unter `uvicorn` @127.0.0.1, in einer
+>   **pywebview/WebView2-Shell** (`app/desktop.py`, Tray/Autostart/Toast).
+> - **LanceDB = EINZIGER Wissensspeicher** (`app/pipelines/store.py`, im Vault) —
+>   ersetzt Qdrant **und** die Postgres-Korpus-Tabellen. Dazu ein kleines lokales
+>   **`appstate.sqlite`** (Keys/Users/Log, NICHT im Vault).
+> - **Embeddings: ONNX/fastembed `intfloat/multilingual-e5-large`** (1024-dim,
+>   mehrsprachig; **nicht** bge-m3 — fastembed unterstützt es nicht — mit e5-Query/
+>   Passage-Präfixen in `factory.py`). Reranker bge-reranker-v2-m3 als INT8-ONNX.
+>   **Kein Ollama/LLM** — Tagging/Graph sind deterministisch (LLM-frei).
+> - **Rollen (M8e):** `writer` (Ingest+Query, Docling/torch, schreibt Vault-Versionen)
+>   vs. `reader` (query-only, liest lokalen Cache am LanceDB-`current`-Tag; kein
+>   Docling/torch). Umschaltung über `settings().service_role`.
+> - **MCP: Bearer-only, read-only** (kein OAuth/TOTP). Tools: `rag_overview`,
+>   `rag_retrieve`, `norm_lookup`, `rag_list_documents`, `rag_get_document`(+Volltext),
+>   `rag_stats`. UI hat lokalen **Auto-Login** (`local_ui_autologin`, 127.0.0.1).
+> - **Publish/Versionierung** über LanceDB-Tags (`current`/`prev`) + Leser-Cache
+>   (`app/pipelines/publish.py`). Backup = Vault-Kopie + appstate (`backup/engine.py`).
+> - **Packaging (`build/`):** zwei Windows-Installer (Schreiber ~3 GB voll /
+>   Leser ~2,5 GB) via PyInstaller + Inno-Setup; beide gebaut & Payload-Boot verifiziert.
+> - **Gelöscht:** Docker/Compose/Caddy, `worker.py`, OAuth/TOTP, pg_dump/Qdrant-Backup,
+>   Postgres-/Qdrant-/Ollama-/Haystack-Deps.
+
 > **Änderungslog:**
+> - 2026-07-20 — **M8 komplett + Installer gebaut (echter Windows-Build).** M8c
+>   pywebview-Shell (`app/desktop.py`), M8d Packaging (`build/`: 2× PyInstaller-Spec
+>   + 2× Inno-Setup + `build.ps1` + `fetch-models.py` + `make-icon.py`), M8e
+>   Reader/Writer-Rollen-Split (lazy Ingest-Importe, Store-Cache-Rolle, `appsettings.py`,
+>   Config-Aliase). **Beim echten Build 4 reale Bugs gefunden & gefixt:** (1) fastembed
+>   kennt **bge-m3 nicht** → Umstieg auf **multilingual-e5-large** (1024-dim) +
+>   e5-Präfixe; (2) **aiosqlite**/uvicorn-/SQLAlchemy-Dialekte dynamisch geladen →
+>   `collect_all` in beide Specs (sonst crasht die eingefrorene App beim Import);
+>   (3) torch-Lizenzbäume >260 Zeichen → `Remove-DistInfoLicenses` (robocopy) in
+>   `build.ps1`; (4) Unicode-Prints → ASCII. **Verifiziert:** beide Installer
+>   „Successful compile"; beide Payloads booten live (Health 200, sqlite+lancedb;
+>   Writer startet Queue/Maintenance/Backup); `ruff` + `npm build` grün. Auf `main`
+>   (`c5ffd9b`). Installer liegen lokal in `dist/` (gitignored).
+> - 2026-07-19 — **M3-Rest → M7 + Tiefen-Audit** (LanceDB-Store komplett, LLM-freies
+>   Tagging M5, In-Process-Queue M6, Publish/Versionierung M7; Audit reparierte
+>   still-kaputte SQLite-Pipelines [array_agg/JSON-`.contains`] und entfernte tote
+>   VPS-Infra). Auf `main` bis `8a6bc5a`.
 > - 2026-07-16 — **Aufräumrunde vor Feature-Freeze** (3-Agenten-Audit: toter Code,
 >   Bugs, Deps/Config/Doku). Auf `main` (`548b725` Cleanup, `2b0fcbe` Fixes,
 >   `9b3a32a` OpenRouter, + Doku).

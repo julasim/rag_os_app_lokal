@@ -52,3 +52,8 @@ Thumbs.db
 /installer_output/
 # Modell-/HF-Caches, falls lokal abgelegt
 /models/
+
+# graphify: generierter, regenerierbarer Wissensgraph (lokal, nicht ins Repo —
+# per `/graphify` jederzeit neu baubar, 0 Tokens/AST). Auch der Streu-Cache unter app/.
+graphify-out/
+app/graphify-out/
