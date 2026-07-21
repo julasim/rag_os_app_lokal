@@ -9,6 +9,17 @@ Verbindet alle Komponenten:
 """
 from __future__ import annotations
 
+# Air-gapped (M8f): HF-Offline-Flags MÜSSEN gesetzt sein, BEVOR irgendein transitiver
+# huggingface_hub-Import (via fastembed/transformers/docling) das Flag import-zeitig
+# cached. Deshalb ganz oben, vor allen App-Importen. Die KI-Modelle sind gebündelt
+# (Installer → %LOCALAPPDATA%\RAG-OS\models); ohne diese Zeilen lädt Docling/HF beim
+# ersten Ingest zur Laufzeit nach (Race → „Missing safe tensors file"). Dev kann mit
+# HF_HUB_OFFLINE=0 übersteuern.
+import os
+
+os.environ.setdefault("HF_HUB_OFFLINE", "1")
+os.environ.setdefault("TRANSFORMERS_OFFLINE", "1")
+
 import asyncio
 from contextlib import asynccontextmanager
 from fastapi import FastAPI

@@ -23,17 +23,25 @@ _TOKENIZER = "intfloat/multilingual-e5-large"
 
 
 def run_docling(path: Path) -> IngestResult:
-    """Parst + chunkt eine Datei layout-bewusst (offline). artifacts_path/offline
-    kommen aus IngestConfig-Defaults (DOCLING_ARTIFACTS_PATH-Env, gesetzt vom Deploy)."""
+    """Parst + chunkt eine Datei layout-bewusst (offline).
+
+    artifacts_path + Chunk-Tokenizer kommen aus den gebündelten Modellen (der
+    Schreiber-Installer legt Layout/TableFormer nach `models_dir/docling` und den
+    e5-Tokenizer nach `models_dir/e5-tokenizer`). Sind sie da, lädt Docling NICHTS
+    zur Laufzeit → kein HF-Download-Race, air-gapped. Fehlen sie (Dev ohne Bake),
+    fällt es auf die Model-IDs zurück (First-Run-Download)."""
+    from config import settings
+
+    s = settings()
     ic = IngestConfig(
         ocr="off",              # born-digital; Scan-OCR = C1b (Modelle vorab backen)
-        tokenizer=_TOKENIZER,
+        tokenizer=s.chunk_tokenizer_dir or _TOKENIZER,
         lang_detect=False,      # Sprache liefert metadata_extract (LLM) im RAG-Flow
-        # offline=True (M1.3): air-gapped. Layout/TableFormer + bge-m3-Tokenizer sind
-        # ins rag-ingest-Image gebacken (Dockerfile.ingest → /opt/models/{docling,
-        # huggingface}), HF_HUB_OFFLINE/TRANSFORMERS_OFFLINE verhindern Runtime-Downloads.
-        # Kein Reranker-Seiteneffekt mehr: Docling läuft nur im rag-ingest-Worker (kein
-        # Rerank dort), und der ONNX-Reranker lädt seinen Tokenizer mit local_files_only.
+        # offline=True (M8f): air-gapped. Layout/TableFormer + e5-Tokenizer sind vom
+        # Installer nach %LOCALAPPDATA%\RAG-OS\models gebündelt; HF_HUB_OFFLINE/
+        # TRANSFORMERS_OFFLINE (in main.py am Prozessstart gesetzt) sind die zweite
+        # Absicherung. artifacts_path zeigt Docling explizit auf die lokalen Modelle.
+        artifacts_path=s.docling_artifacts_dir,
         offline=True,
     )
     return _docling_ingest(path, ic)

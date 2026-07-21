@@ -38,7 +38,8 @@ Name: "desktopicon"; Description: "Desktop-Verknuepfung anlegen"; Flags: uncheck
 
 [Files]
 Source: "{#SourceDir}\*"; DestDir: "{app}"; Flags: recursesubdirs createallsubdirs ignoreversion
-; Query-Modelle (bge-m3 + reranker) -> Userdata, wo die Runtime sie sucht.
+; Alle Modelle -> Userdata: Query (e5-large + reranker) + Ingest (Docling Layout/
+; TableFormer + e5-Tokenizer). Gebündelt => kein Runtime-Download beim ersten Ingest.
 Source: "models\*"; DestDir: "{localappdata}\RAG-OS\models"; Flags: recursesubdirs createallsubdirs ignoreversion
 ; WebView2 Evergreen-Bootstrapper (optional; wird nur bei Bedarf ausgefuehrt).
 Source: "redist\MicrosoftEdgeWebview2Setup.exe"; DestDir: "{tmp}"; Flags: deleteafterinstall skipifsourcedoesntexist

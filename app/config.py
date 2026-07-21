@@ -138,9 +138,26 @@ class Settings(BaseSettings):
 
     @property
     def embed_cache_dir(self) -> str:
-        """fastembed-Cache (bge-m3). Der Installer legt das gebackene Modell hier ab
+        """fastembed-Cache (e5-large). Der Installer legt das gebackene Modell hier ab
         (Hybrid); fehlt es, lädt fastembed beim ersten Start hierher (First-Run)."""
         return str(self.models_dir / "fastembed")
+
+    @property
+    def docling_artifacts_dir(self) -> str | None:
+        """Vorab gebündelte Docling-Modelle (Layout + TableFormer), vom Schreiber-
+        Installer nach `models_dir/docling` gelegt. Ist der Ordner da, zeigt Docling
+        über `artifacts_path` darauf → kein Runtime-Download vom HF-Hub (kein Race,
+        air-gapped). Fehlt er (z.B. Reader/Dev ohne Bake), None → altes Verhalten."""
+        d = self.models_dir / "docling"
+        return str(d) if d.is_dir() else None
+
+    @property
+    def chunk_tokenizer_dir(self) -> str | None:
+        """Vorab gebündelter e5-large-Tokenizer für den HybridChunker (token-aligned
+        Chunk-Grenzen). Als lokaler Pfad an `HuggingFaceTokenizer.from_pretrained` →
+        offline ohne Netz. Fehlt er, None → Chunker nutzt die Model-ID (First-Run)."""
+        d = self.models_dir / "e5-tokenizer"
+        return str(d) if d.is_dir() else None
 
     @property
     def reader_cache_uri(self) -> str:

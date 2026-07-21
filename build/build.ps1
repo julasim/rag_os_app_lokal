@@ -55,7 +55,7 @@ try {
     python (Join-Path $build "make-icon.py")
 
     if (-not $SkipModels) {
-        Write-Host "== [3/5] Query-Modelle (bge-m3 + Reranker) ==" -ForegroundColor Cyan
+        Write-Host "== [3/5] Modelle (e5-large + Reranker + Docling + Tokenizer) ==" -ForegroundColor Cyan
         python (Join-Path $build "fetch-models.py")
     }
 

@@ -34,12 +34,26 @@ Sie enthält das, was beim Code-Lesen *nicht* offensichtlich ist.
 >   `rag_stats`. UI hat lokalen **Auto-Login** (`local_ui_autologin`, 127.0.0.1).
 > - **Publish/Versionierung** über LanceDB-Tags (`current`/`prev`) + Leser-Cache
 >   (`app/pipelines/publish.py`). Backup = Vault-Kopie + appstate (`backup/engine.py`).
-> - **Packaging (`build/`):** zwei Windows-Installer (Schreiber ~3 GB voll /
+> - **Packaging (`build/`):** zwei Windows-Installer (Schreiber ~3,3 GB voll /
 >   Leser ~2,5 GB) via PyInstaller + Inno-Setup; beide gebaut & Payload-Boot verifiziert.
+>   **Alle KI-Modelle sind GEBÜNDELT** (kein Runtime-Download): Query (e5-large + Reranker,
+>   beide Installer) + Ingest (Docling Layout/TableFormer + e5-Tokenizer, nur Schreiber).
 > - **Gelöscht:** Docker/Compose/Caddy, `worker.py`, OAuth/TOTP, pg_dump/Qdrant-Backup,
 >   Postgres-/Qdrant-/Ollama-/Haystack-Deps.
 
 > **Änderungslog:**
+> - 2026-07-21 — **M8f: Docling-Modelle gebündelt (Erststart-Race behoben).** Beim ersten
+>   echten Install-Test scheiterte JEDER erste Ingest mit „Missing safe tensors file":
+>   Docling lud das Layout-Modell (`docling-layout-heron`) zur Laufzeit vom HF-Hub, und der
+>   Ingest rannte mit dem Download um die Wette; das alte `offline=True` griff nicht (Flags
+>   zu spät gesetzt, huggingface_hub cached sie beim Import). **Fix (Option A):** Docling
+>   Layout+TableFormer + e5-Tokenizer werden jetzt beim Build gebacken (`build/fetch-models.py`)
+>   und vom Schreiber-Installer nach `%LOCALAPPDATA%\RAG-OS\models\{docling,e5-tokenizer}`
+>   gelegt; `run_docling` zeigt Docling per `artifacts_path` + lokalem Chunk-Tokenizer explizit
+>   darauf (`config.docling_artifacts_dir`/`chunk_tokenizer_dir`); `HF_HUB_OFFLINE`/
+>   `TRANSFORMERS_OFFLINE` werden am Prozessstart in `main.py` gesetzt (vor jedem HF-Import).
+>   Reader-Installer excludet Docling/Tokenizer (query-only bleibt schlank). Kein Runtime-
+>   Download mehr, air-gapped, kein Race. Installer wächst ~+350 MB.
 > - 2026-07-20 — **M8 komplett + Installer gebaut (echter Windows-Build).** M8c
 >   pywebview-Shell (`app/desktop.py`), M8d Packaging (`build/`: 2× PyInstaller-Spec
 >   + 2× Inno-Setup + `build.ps1` + `fetch-models.py` + `make-icon.py`), M8e
