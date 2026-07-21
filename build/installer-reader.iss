@@ -44,8 +44,8 @@ Source: "models\reranker\*"; DestDir: "{localappdata}\RAG-OS\models\reranker"; F
 Source: "redist\MicrosoftEdgeWebview2Setup.exe"; DestDir: "{tmp}"; Flags: deleteafterinstall skipifsourcedoesntexist
 
 [Icons]
-Name: "{group}\RAG-OS (Leser)"; Filename: "{app}\{#ExeName}"; Parameters: "{#RoleArg}"; IconFilename: "{app}\assets\ragos.ico"
-Name: "{userdesktop}\RAG-OS (Leser)"; Filename: "{app}\{#ExeName}"; Parameters: "{#RoleArg}"; IconFilename: "{app}\assets\ragos.ico"; Tasks: desktopicon
+Name: "{group}\RAG-OS (Leser)"; Filename: "{app}\{#ExeName}"; Parameters: "{#RoleArg}"; IconFilename: "{app}\{#ExeName}"
+Name: "{userdesktop}\RAG-OS (Leser)"; Filename: "{app}\{#ExeName}"; Parameters: "{#RoleArg}"; IconFilename: "{app}\{#ExeName}"; Tasks: desktopicon
 
 [Registry]
 ; Autostart (nur wenn Task gewaehlt) - --tray; die Rolle kommt aus app-settings.json.

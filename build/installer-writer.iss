@@ -45,8 +45,8 @@ Source: "models\*"; DestDir: "{localappdata}\RAG-OS\models"; Flags: recursesubdi
 Source: "redist\MicrosoftEdgeWebview2Setup.exe"; DestDir: "{tmp}"; Flags: deleteafterinstall skipifsourcedoesntexist
 
 [Icons]
-Name: "{group}\RAG-OS"; Filename: "{app}\{#ExeName}"; Parameters: "{#RoleArg}"; IconFilename: "{app}\assets\ragos.ico"
-Name: "{userdesktop}\RAG-OS"; Filename: "{app}\{#ExeName}"; Parameters: "{#RoleArg}"; IconFilename: "{app}\assets\ragos.ico"; Tasks: desktopicon
+Name: "{group}\RAG-OS"; Filename: "{app}\{#ExeName}"; Parameters: "{#RoleArg}"; IconFilename: "{app}\{#ExeName}"
+Name: "{userdesktop}\RAG-OS"; Filename: "{app}\{#ExeName}"; Parameters: "{#RoleArg}"; IconFilename: "{app}\{#ExeName}"; Tasks: desktopicon
 
 [Registry]
 ; Autostart (nur wenn Task gewaehlt) - --tray; die Rolle kommt aus app-settings.json.
