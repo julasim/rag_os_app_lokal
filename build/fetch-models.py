@@ -4,7 +4,7 @@ Backt ALLE lokalen KI-Modelle in build/models/ (der Installer legt sie nach
 
   Query (IMMER, beide Installer):
   - Reranker bge-reranker-v2-m3  -> build/models/reranker/    (INT8-ONNX)
-  - Embedder e5-large (fastembed) -> build/models/fastembed/   (ONNX)
+  - Embedder e5-large            -> build/models/embedder/    (INT8-ONNX, ~3,2x)
 
   Ingest (NUR Schreiber; Reader-Installer excludet sie):
   - Docling Layout + TableFormer -> build/models/docling/      (artifacts_path)
@@ -40,14 +40,45 @@ def export_reranker() -> None:
 
 
 def fetch_embedder() -> None:
-    out = MODELS / "fastembed"
+    """e5-large -> INT8-quantisiertes ONNX + Tokenizer nach build/models/embedder.
+    Der Runtime-Embedder (pipelines/factory.py) laeuft direkt ueber onnxruntime —
+    INT8 ist ~3,2x schneller auf CPU als fp32 und 4x kleiner (561 MB statt 2,2 GB)."""
+    import shutil
+
+    from onnxruntime.quantization import QuantType, quantize_dynamic
+
+    out = MODELS / "embedder"
     out.mkdir(parents=True, exist_ok=True)
-    print(f"==> e5-large (fastembed) laden -> {out}")
+    print(f"==> e5-large -> INT8-ONNX -> {out}")
+
+    # 1. fp32 e5-large-ONNX via fastembed cachen (nur Build-Zeit).
     from fastembed import TextEmbedding
 
-    emb = TextEmbedding(model_name=_EMBED_MODEL, cache_dir=str(out))
-    # Ein Embed erzwingt den vollstaendigen Download der ONNX-Dateien.
-    list(emb.embed(["warmup"]))
+    tmp_cache = MODELS / "_e5_fp32_cache"
+    emb = TextEmbedding(model_name=_EMBED_MODEL, cache_dir=str(tmp_cache))
+    list(emb.embed(["warmup"]))  # erzwingt vollstaendigen Download
+
+    # 2. model.onnx (+ externe .onnx_data) DEREFERENZIERT kopieren — der HF-Cache
+    #    nutzt Symlinks, und der ONNX-Checker lehnt Symlink-Tensordaten ab.
+    snap = next(tmp_cache.glob("models--*/snapshots/*/model.onnx")).parent
+    real = MODELS / "_e5_fp32_real"
+    real.mkdir(exist_ok=True)
+    for f in ("model.onnx", "model.onnx_data"):
+        if (snap / f).exists():
+            shutil.copy(snap / f, real / f)   # copy folgt Symlink -> echte Bytes
+
+    # 3. dynamisch INT8-quantisieren.
+    quantize_dynamic(str(real / "model.onnx"), str(out / "model_quantized.onnx"),
+                     weight_type=QuantType.QInt8)
+
+    # 4. Tokenizer daneben (self-contained, wie der Reranker).
+    from transformers import AutoTokenizer
+
+    AutoTokenizer.from_pretrained(_EMBED_MODEL).save_pretrained(str(out))
+
+    # 5. Build-Temp wegraeumen.
+    shutil.rmtree(tmp_cache, ignore_errors=True)
+    shutil.rmtree(real, ignore_errors=True)
     print("    fertig.")
 
 

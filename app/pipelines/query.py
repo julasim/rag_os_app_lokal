@@ -227,7 +227,7 @@ def _retrieve_only_inner(
     embed_model: str,
     hybrid: bool,
 ) -> list[HayDoc]:
-    """Dense-Embedding (fastembed/ONNX) + LanceDB-Store.
+    """Dense-Embedding (INT8-ONNX) + LanceDB-Store.
 
     hybrid=True: dense + FTS/BM25 mit RRF-Fusion. hybrid=False: reiner dense-Pfad.
     """

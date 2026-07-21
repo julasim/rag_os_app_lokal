@@ -24,8 +24,12 @@ _FAMILY_BY_PREFIX = {
     "din": "din", "en": "en", "iso": "iso", "iec": "iec",
 }
 _OIB_RE = re.compile(r"\bOIB\b", re.IGNORECASE)
+# Reine römische Ziffern (xvii/xxiv/…) — in AT-Gesetzesköpfen (GP/BGBl) allgegenwärtig.
+_ROMAN_RE = re.compile(r"^[ivxlcdm]+$", re.IGNORECASE)
 
-# Deutsch/Englisch-Stoppwörter (klein halten; nur die häufigsten Füllwörter).
+# Deutsch/Englisch-Stoppwörter + juristische Boilerplate. Der Kopf eines
+# AT-Gesetzes ist eine BGBl-Novellenliste ("BGBl. I Nr. X/YYYY, XVII. GP") —
+# ohne diese Liste dominieren bgbl/bundesgesetz/änderung/römische Ziffern die Tags.
 _STOP = {
     "der", "die", "das", "und", "ist", "für", "mit", "den", "von", "nicht", "eine",
     "auch", "dem", "sich", "auf", "werden", "bei", "als", "aus", "sind", "wird",
@@ -33,6 +37,16 @@ _STOP = {
     "muss", "sowie", "diese", "dieser", "dieses", "wenn", "aber", "nur", "wie", "vor",
     "the", "and", "for", "with", "that", "this", "are", "from", "which", "shall",
     "have", "been", "not", "all", "any", "may", "such", "per", "into", "than",
+    # --- juristische Boilerplate (AT-Gesetze/Verordnungen) ---
+    "bgbl", "bundesgesetz", "bundesgesetzblatt", "bundesrecht", "gesetz", "gesetze",
+    "artikel", "absatz", "paragraph", "paragraf", "fassung", "gemäß", "gemaess",
+    "nummer", "ziffer", "litera", "abschnitt", "hauptstück", "hauptstueck", "anlage",
+    "inkrafttreten", "verordnung", "novelle", "änderung", "aenderung", "geändert",
+    "geaendert", "aufgehoben", "sinne", "jeweils", "geltenden", "erster", "zweiter",
+    "dritter", "vierter", "fünfter", "beziehungsweise", "insbesondere", "gilt",
+    "gelten", "welche", "welcher", "welches", "haben", "worden", "wurde", "wurden",
+    "jahr", "jahre", "monat", "monate", "person", "personen", "fall", "fälle",
+    "faelle", "teil", "teile", "republik", "österreich", "oesterreich",
 }
 
 
@@ -60,8 +74,9 @@ def generate_tags(text: str, max_chars: int = 4000) -> list[str]:
         if _OIB_RE.search(head[:1500]):
             _add("oib")
 
-        # 2. Häufigste Inhaltswörter (Term-Frequenz, Stoppwörter/kurze Tokens raus).
-        for word, _n in _keywords(head):
+        # 2. Häufigste Inhaltswörter über den GANZEN Text (nicht nur den Kopf —
+        #    der ist bei Gesetzen Novellen-Boilerplate; der Inhalt kommt später).
+        for word, _n in _keywords(text):
             _add(word)
             if len(tags) >= _MAX_TAGS:
                 break
@@ -73,23 +88,20 @@ def generate_tags(text: str, max_chars: int = 4000) -> list[str]:
         return []
 
 
-def _keywords(text: str, top: int = 10) -> list[tuple[str, int]]:
-    """Term-Frequenz-Ranking der Inhaltswörter (≥4 Zeichen, keine Stoppwörter,
-    keine reinen Zahlen). Deutsch profitiert von der Substantiv-Großschreibung —
-    wir zählen case-insensitiv, geben aber das häufigste Schriftbild zurück."""
+def _keywords(text: str, top: int = 10, max_chars: int = 200_000) -> list[tuple[str, int]]:
+    """Ranking der Inhaltswörter (≥5 Zeichen, keine Stoppwörter/Boilerplate, keine
+    römischen Ziffern). Score = Häufigkeit × leichte Längen-Gewichtung — deutsche
+    Komposita (Hauptmietzins, Betriebskosten) sind spezifischer als kurze Allerwelts-
+    wörter und sollen vorne stehen."""
     counts: Counter[str] = Counter()
-    forms: dict[str, Counter[str]] = {}
-    for tok in re.findall(r"[A-Za-zÄÖÜäöüß][A-Za-zÄÖÜäöüß\-]{3,}", text):
-        low = tok.lower()
-        if low in _STOP or len(low) < 4:
+    for tok in re.findall(r"[A-Za-zÄÖÜäöüß][A-Za-zÄÖÜäöüß\-]{4,}", text[:max_chars]):
+        low = tok.lower().strip("-")  # Trenn-Bindestriche aus Zeilenumbrüchen weg
+        if len(low) < 5 or low in _STOP or _ROMAN_RE.match(low):
             continue
         counts[low] += 1
-        forms.setdefault(low, Counter())[tok] += 1
-    out: list[tuple[str, int]] = []
-    for low, n in counts.most_common(top * 2):
-        if n < 2:
-            continue  # Einmalvorkommen sind zu schwach für ein Tag
-        out.append((low, n))
-        if len(out) >= top:
-            break
-    return out
+    scored = sorted(
+        ((low, n) for low, n in counts.items() if n >= 2),
+        key=lambda x: x[1] * (1 + min(len(x[0]), 16) / 20),
+        reverse=True,
+    )
+    return scored[:top]

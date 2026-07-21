@@ -1,4 +1,4 @@
-"""Pipelines: Store (LanceDB), Embeddings (fastembed/ONNX), Retrieval, Reranker.
+"""Pipelines: Store (LanceDB), Embeddings (INT8-ONNX), Retrieval, Reranker.
 
 Bewusst KEINE Eager-Imports (früher zog das Haystack + erzeugte Import-Zyklen).
 Module direkt importieren: `from pipelines import store`, `from pipelines.query

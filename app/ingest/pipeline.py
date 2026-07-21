@@ -6,7 +6,7 @@ Orchestriert den gesamten Weg Datei → LanceDB:
   2. Datei in <uploads>/<folder>/ ablegen
   3. Parsen (docling/legacy)
   4. Chunken
-  5. Embedden (ONNX/fastembed bge-m3)
+  5. Embedden (INT8-ONNX e5-large)
   6. Chunks kanonisch nach SQLite + Zeilen nach LanceDB (`chunks`)
   7. Status aktualisieren
 """
@@ -589,7 +589,7 @@ async def _embed_and_store(
     chunks: list[dict], embed_model: str
 ) -> None:
     """
-    Embeddet die Chunk-Texte dicht (ONNX/fastembed bge-m3) und schreibt Text +
+    Embeddet die Chunk-Texte dicht (INT8-ONNX e5-large) und schreibt Text +
     Vektor + Payload als Zeilen in die LanceDB-`chunks`-Tabelle. Die lexikalische
     Seite (BM25/exakte Normnummern) übernimmt LanceDBs FTS-Index auf `text` —
     kein separater Sparse-Vektor mehr, kein Haystack/Ollama.

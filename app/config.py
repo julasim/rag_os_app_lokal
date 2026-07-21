@@ -43,10 +43,10 @@ class Settings(BaseSettings):
     # app-settings.json). appstate.sqlite bleibt IMMER lokal.
     vault_path: Path = Field(default=_DEFAULT_VAULT, validation_alias="RAG_VAULT_PATH")
 
-    # --- Embeddings (fastembed/ONNX, kein Ollama) ---
-    # multilingual-e5-large (1024-dim, mehrsprachig/DE) — bge-m3 ist in fastembeds
-    # Dense-TextEmbedding NICHT verfügbar; e5-large ist das beste unterstützte
-    # mehrsprachige Modell. e5 verlangt Query/Passage-Präfixe (siehe factory).
+    # --- Embeddings (INT8-ONNX via onnxruntime, kein Ollama/fastembed) ---
+    # multilingual-e5-large (1024-dim, mehrsprachig/DE), INT8-quantisiert und vom
+    # Build gebacken (models_dir/embedder). e5 verlangt Query/Passage-Präfixe
+    # (siehe factory). Feld nur noch informativ — factory lädt das gebündelte ONNX.
     embed_model: str = "intfloat/multilingual-e5-large"
 
     # --- App ---
@@ -135,12 +135,6 @@ class Settings(BaseSettings):
     def models_dir(self) -> Path:
         """Gebackene/heruntergeladene KI-Modelle (M8d), pro Rechner."""
         return _APPDATA / "models"
-
-    @property
-    def embed_cache_dir(self) -> str:
-        """fastembed-Cache (e5-large). Der Installer legt das gebackene Modell hier ab
-        (Hybrid); fehlt es, lädt fastembed beim ersten Start hierher (First-Run)."""
-        return str(self.models_dir / "fastembed")
 
     @property
     def docling_artifacts_dir(self) -> str | None:

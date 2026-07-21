@@ -1,16 +1,21 @@
 """
-Factory: Embeddings (fastembed/ONNX) + Store-Zugriff.
+Factory: Embeddings (INT8-ONNX via onnxruntime) + Store-Zugriff.
 
-Lokale Variante: **kein Haystack, kein Qdrant, kein Ollama.** Dense-Embeddings
-laufen über fastembed (ONNX) mit `bge-m3`; der Vektor-Store ist LanceDB
-(`pipelines/store.py`); die lexikalische Seite (BM25) ist LanceDBs FTS.
+Lokale Variante: **kein Haystack, kein Qdrant, kein Ollama, kein fastembed.**
+Dense-Embeddings laufen über ein **INT8-quantisiertes e5-large-ONNX**
+(`models_dir/embedder`, vom Build gebacken — analog zum Reranker) direkt über
+onnxruntime: Tokenize → Modell → Mean-Pooling → L2-Normalisierung. INT8 ist
+~3,2× schneller auf CPU als fp32 und 4× kleiner (561 MB statt 2,2 GB), bei
+praktisch identischer Retrieval-Qualität (Vektor-Treue 0,99). Der Vektor-Store
+ist LanceDB (`pipelines/store.py`); die lexikalische Seite (BM25) ist die FTS.
 
-Die `get_*`-Shims unten halten noch-nicht-umverdrahtete Call-Sites importierbar
-(sie werfen erst beim AUFRUF) — werden in M3-Rest/M5 an den Stellen ersetzt.
+Die `get_*`-Shims unten halten noch-nicht-umverdrahtete Call-Sites importierbar.
 """
 from __future__ import annotations
 
 from functools import lru_cache
+
+import numpy as np
 
 from config import settings
 from logger import log
@@ -18,36 +23,74 @@ from logger import log
 # Kompat-Konstante (graph/l2.py, backup/engine.py importieren sie noch).
 COLLECTION_NAME = "chunks"
 
+# INT8 bevorzugen (kleiner + schneller), sonst fp32-Fallback.
+_ONNX_CANDIDATES = ("model_quantized.onnx", "model.onnx")
+_MAX_LENGTH = 512
+_BATCH = 32
+
 
 # ---------------------------------------------------------------------------
-# Dense-Embeddings (fastembed/ONNX)
+# Dense-Embeddings (INT8-ONNX, onnxruntime — kein torch/fastembed)
 # ---------------------------------------------------------------------------
-@lru_cache(maxsize=2)
-def _embedder(model: str):
-    from fastembed import TextEmbedding
-    cache_dir = settings().embed_cache_dir
-    log.info("embedder.load", model=model, cache_dir=cache_dir)
-    # cache_dir = gebackenes/heruntergeladenes Modell (M8d Hybrid). Vorhanden →
-    # offline genutzt; fehlt → fastembed lädt beim ersten Aufruf dorthin.
-    return TextEmbedding(model_name=model, cache_dir=cache_dir)
+@lru_cache(maxsize=1)
+def _embed_model():
+    """Lädt Tokenizer + ONNX-Session einmalig (prozessweit gecached).
+    Rückgabe: (tokenizer, session, input_names)."""
+    import os
+
+    import onnxruntime as ort
+    from transformers import AutoTokenizer
+
+    model_dir = str(settings().models_dir / "embedder")
+    onnx_path = next(
+        (os.path.join(model_dir, n) for n in _ONNX_CANDIDATES
+         if os.path.exists(os.path.join(model_dir, n))),
+        None,
+    )
+    if onnx_path is None:
+        raise FileNotFoundError(
+            f"Kein ONNX-Embedder in {model_dir} ({'/'.join(_ONNX_CANDIDATES)})"
+        )
+    log.info("embedder.load", model_dir=model_dir, onnx=os.path.basename(onnx_path))
+    tokenizer = AutoTokenizer.from_pretrained(model_dir, local_files_only=True)
+    so = ort.SessionOptions()
+    so.graph_optimization_level = ort.GraphOptimizationLevel.ORT_ENABLE_ALL
+    session = ort.InferenceSession(onnx_path, sess_options=so, providers=["CPUExecutionProvider"])
+    input_names = {i.name for i in session.get_inputs()}
+    log.info("embedder.ready", inputs=sorted(input_names))
+    return tokenizer, session, input_names
 
 
-def _is_e5(model: str) -> bool:
-    """e5-Modelle brauchen asymmetrische Präfixe: 'query:' für Fragen, 'passage:'
-    für Dokumente. Andere Modelle (bge-*) verwenden keine Präfixe."""
-    return "e5" in model.lower()
+def _embed(payloads: list[str]) -> list[list[float]]:
+    """Batched Mean-Pooling-Embedding (L2-normalisiert) über die INT8-Session."""
+    if not payloads:
+        return []
+    tok, session, names = _embed_model()
+    out: list[list[float]] = []
+    for i in range(0, len(payloads), _BATCH):
+        batch = payloads[i:i + _BATCH]
+        enc = tok(batch, padding=True, truncation=True,
+                  max_length=_MAX_LENGTH, return_tensors="np")
+        feeds = {"input_ids": enc["input_ids"].astype(np.int64),
+                 "attention_mask": enc["attention_mask"].astype(np.int64)}
+        if "token_type_ids" in names:
+            feeds["token_type_ids"] = np.zeros_like(enc["input_ids"], dtype=np.int64)
+        last = session.run(None, feeds)[0]                     # (B, T, H)
+        mask = enc["attention_mask"][:, :, None].astype(np.float32)
+        pooled = (last * mask).sum(1) / np.clip(mask.sum(1), 1e-9, None)
+        pooled = pooled / np.clip(np.linalg.norm(pooled, axis=1, keepdims=True), 1e-9, None)
+        out.extend(pooled.astype(np.float32).tolist())
+    return out
 
 
 def embed_query(text: str, model: str | None = None) -> list[float]:
-    m = model or settings().embed_model
-    q = f"query: {text}" if _is_e5(m) else text
-    return list(_embedder(m).embed([q]))[0].tolist()
+    """e5-Query-Präfix (asymmetrisch zu 'passage:' beim Ingest)."""
+    return _embed([f"query: {text}"])[0]
 
 
 def embed_texts(texts: list[str], model: str | None = None) -> list[list[float]]:
-    m = model or settings().embed_model
-    payload = [f"passage: {t}" for t in texts] if _is_e5(m) else texts
-    return [[float(x) for x in v] for v in _embedder(m).embed(payload)]
+    """e5-Passage-Präfix für Dokument-Chunks."""
+    return _embed([f"passage: {t}" for t in texts])
 
 
 def warmup_embedder() -> None:

@@ -10,7 +10,7 @@ Verbindet alle Komponenten:
 from __future__ import annotations
 
 # Air-gapped (M8f): HF-Offline-Flags MÜSSEN gesetzt sein, BEVOR irgendein transitiver
-# huggingface_hub-Import (via fastembed/transformers/docling) das Flag import-zeitig
+# huggingface_hub-Import (via transformers/docling) das Flag import-zeitig
 # cached. Deshalb ganz oben, vor allen App-Importen. Die KI-Modelle sind gebündelt
 # (Installer → %LOCALAPPDATA%\RAG-OS\models); ohne diese Zeilen lädt Docling/HF beim
 # ersten Ingest zur Laufzeit nach (Race → „Missing safe tensors file"). Dev kann mit
@@ -90,7 +90,7 @@ async def _warmup_models() -> None:
         from pipelines.factory import warmup_embedder
         cfg = global_config()
         log.info("warmup.start")
-        # Dense-Embedder (ONNX/fastembed bge-m3) einmalig laden. Die lexikalische
+        # Dense-Embedder (INT8-ONNX e5-large) einmalig laden. Die lexikalische
         # Seite ist LanceDBs FTS — kein Sparse-Embedder, kein Ollama mehr.
         await asyncio.to_thread(warmup_embedder)
         # ONNX-Reranker (INT8, gebacken) laden, falls aktiv
