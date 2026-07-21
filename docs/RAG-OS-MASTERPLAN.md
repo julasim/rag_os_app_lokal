@@ -1,5 +1,11 @@
 # RAG-OS — Endgültiger Umbauplan (2026-07-15, review-korrigiert)
 
+> ✅ **ERLEDIGT / HISTORISCH (Stand 2026-07-21).** Dieser Plan (Tracks C–F, noch in
+> der Docker-Welt gedacht) ist umgesetzt. Der **Docker-freie native Umbau (M1–M8, + M8f
+> Modell-Bündelung)** ist fertig, gebaut und E2E-verifiziert. Lebender Fortschritt +
+> Architektur: **`BUILD-PLAN.md`** und **`CLAUDE.md`**. Dieses Dokument bleibt als
+> Aufzeichnung der Planungsphase.
+
 > Drei Subagenten haben Plan **und echten Code** geprüft (Sicherheit · Korrektheit/
 > Funktionalität · Effizienz/Algorithmen). Ihre Befunde sind hier eingearbeitet.
 > **Gesamturteil:** Architektur tragfähig und mit dem realen Code konsistent; die

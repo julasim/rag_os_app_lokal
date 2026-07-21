@@ -1,5 +1,13 @@
 # Deployment-Guide
 
+> ⚠️ **VOLLSTÄNDIG VERALTET (Stand 2026-07-21).** Dieses Dokument beschreibt den
+> alten **VPS-Docker-Deploy** (Hetzner, Compose, Edge-Caddy, Ollama/Qdrant/Postgres).
+> Die App ist inzwischen eine **native, Docker-freie Windows-Desktop-App** (ein
+> Prozess, LanceDB im Vault, gebündelte ONNX-Modelle, zwei Installer). „Deployment"
+> heißt jetzt: **Installer bauen** (`build/build.ps1`) und ausführen. Quelle der
+> Wahrheit: **`CLAUDE.md`** (Statusbanner + §M8f) und **`BUILD-PLAN.md`**. Alles unten
+> ist reine Historie.
+
 Schritt-für-Schritt-Anleitung, um das RAG-System auf einem Hetzner-VPS
 in Betrieb zu nehmen. Zeitaufwand beim ersten Mal: **~45 Minuten**.
 

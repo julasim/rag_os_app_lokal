@@ -34,8 +34,8 @@ Sie enthält das, was beim Code-Lesen *nicht* offensichtlich ist.
 >   `rag_stats`. UI hat lokalen **Auto-Login** (`local_ui_autologin`, 127.0.0.1).
 > - **Publish/Versionierung** über LanceDB-Tags (`current`/`prev`) + Leser-Cache
 >   (`app/pipelines/publish.py`). Backup = Vault-Kopie + appstate (`backup/engine.py`).
-> - **Packaging (`build/`):** zwei Windows-Installer (Schreiber ~3,3 GB voll /
->   Leser ~2,5 GB) via PyInstaller + Inno-Setup; beide gebaut & Payload-Boot verifiziert.
+> - **Packaging (`build/`):** zwei Windows-Installer (Schreiber ~3,5 GB voll /
+>   Leser ~2,6 GB) via PyInstaller + Inno-Setup; beide gebaut & E2E-verifiziert.
 >   **Alle KI-Modelle sind GEBÜNDELT** (kein Runtime-Download): Query (e5-large + Reranker,
 >   beide Installer) + Ingest (Docling Layout/TableFormer + e5-Tokenizer, nur Schreiber).
 > - **Gelöscht:** Docker/Compose/Caddy, `worker.py`, OAuth/TOTP, pg_dump/Qdrant-Backup,
@@ -53,7 +53,15 @@ Sie enthält das, was beim Code-Lesen *nicht* offensichtlich ist.
 >   darauf (`config.docling_artifacts_dir`/`chunk_tokenizer_dir`); `HF_HUB_OFFLINE`/
 >   `TRANSFORMERS_OFFLINE` werden am Prozessstart in `main.py` gesetzt (vor jedem HF-Import).
 >   Reader-Installer excludet Docling/Tokenizer (query-only bleibt schlank). Kein Runtime-
->   Download mehr, air-gapped, kein Race. Installer wächst ~+350 MB.
+>   Download mehr, air-gapped, kein Race. Nebenbei: `rapidocr-onnxruntime`-Pin `>=1.3`→`>=1.2`
+>   (kein cp314-Wheel für 1.3+; OCR ist aus). **Voll verifiziert (isoliert, offline):** beide
+>   zuvor gescheiterten PDFs ingesten sauber — MRG (307 Chunks, `/mietrecht/`) + EStG 1988
+>   (1339 Chunks inkl. Tabellen, `/steuer/`) = **1646 Chunks in LanceDB**, kein safetensors-
+>   Fehler; **Retrieval offline korrekt + ordner-scharf** (Mietzins-Query→MRG §16, Steuer-
+>   Query→EStG „Werbungskosten §16"); Frozen-Build bootet + warmt offline (Embedder+Reranker).
+>   `ruff` grün. **Beide Installer neu gebaut** (Schreiber 3,5 GB nach RapidOcr-Trim, Leser
+>   2,6 GB). Auf `main` (`ba32b28`). Der frühere WebView2-Zyklus im headless Test war ein
+>   Harness-Artefakt (kein Produktfehler).
 > - 2026-07-20 — **M8 komplett + Installer gebaut (echter Windows-Build).** M8c
 >   pywebview-Shell (`app/desktop.py`), M8d Packaging (`build/`: 2× PyInstaller-Spec
 >   + 2× Inno-Setup + `build.ps1` + `fetch-models.py` + `make-icon.py`), M8e
