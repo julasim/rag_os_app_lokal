@@ -1,5 +1,10 @@
 # Sanierungskonzept — RAG OS
 
+> 🗄️ **HISTORISCH (Audit-Record, Stand 2026-07-11).** Rückbau-Plan aus der
+> **Docker/Qdrant/Postgres-Ära**; der native Umbau (M1–M8) hat den Alt-Code ohnehin
+> ersetzt. Infrastruktur-Bezüge überholt; die noch gültigen Prinzipien stehen in
+> **[CLAUDE.md](../CLAUDE.md) §13**. Bleibt als Nachweis der damaligen Rückbau-Entscheidungen.
+
 > **Stand:** 2026-07-11 · **Autor:** Code-Review (statische Analyse)
 > **Zweck:** Toten Code und Alt-Konstrukte geordnet zurückbauen, damit die
 > Codebasis vor dem Multi-User-Rollout schlank und eindeutig ist. Ergänzt das

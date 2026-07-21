@@ -57,3 +57,6 @@ Thumbs.db
 # per `/graphify` jederzeit neu baubar, 0 Tokens/AST). Auch der Streu-Cache unter app/.
 graphify-out/
 app/graphify-out/
+
+# Build-Logs (transient)
+build/*.log

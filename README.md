@@ -1,200 +1,105 @@
-# SIMA RAG-System
+# RAG OS — lokaler Wissens-Suchknoten
 
-> ⚠️ **STARK VERALTET (Stand 2026-07-20).** Dieses README beschreibt den alten
-> **VPS-Docker-Stack**. Die App ist inzwischen eine **native, Docker-freie
-> Windows-Desktop-App** — der gesamte Umbau (M1–M8) ist fertig und beide Installer
-> sind gebaut. **Quelle der Wahrheit: [BUILD-PLAN.md](BUILD-PLAN.md) + [CLAUDE.md](CLAUDE.md).**
-> Kurz, was JETZT gilt (statt des Textes unten):
-> - **Kein Docker/Postgres/Qdrant/Ollama/Haystack.** Ein `uvicorn`-Prozess in einer
->   **pywebview/WebView2-Shell** (`app/desktop.py`), zwei Windows-Installer (Schreiber/Leser).
-> - **LanceDB = einziger Wissensspeicher** (im Vault) + lokales `appstate.sqlite`.
-> - **Embeddings: ONNX `intfloat/multilingual-e5-large`** (kein Ollama). Reranker als INT8-ONNX.
-> - **MCP: Bearer-only, read-only** (`rag_overview`/`rag_retrieve`/`norm_lookup`/…). UI mit
->   lokalem Auto-Login (127.0.0.1). Tagging/Graph **deterministisch, LLM-frei**.
-> - Kein „Projekt"-Konzept (nur Ordner + Tags), Admin-UI ist React/Vite (kein Streamlit).
+Selbstgehosteter, **komplett lokaler** Retrieval-Knoten über das Wissen von Julius
+Sima. Kein Cloud-Dienst, keine Server-Infrastruktur: eine **native Windows-Desktop-App**.
+Sie indexiert Dokumente und macht sie über einen **MCP-Server** für jeden MCP-fähigen
+KI-Client (Claude Desktop, eigene Agents …) durchsuchbar. Die Antwort formuliert immer
+der Client — das System **liefert Chunks + Quellen, es antwortet nicht selbst**.
 
-Selbst-gehostetes, komplett lokales Retrieval-Augmented-Generation-System
-für die Wissens-Bestände von Julius Sima. Exponiert einen MCP-Server und eine
-Verwaltungs-REST-API. Alles läuft auf dem eigenen VPS, nichts verlässt den Server.
+> **Quelle der Wahrheit für Architektur & Stand:** [CLAUDE.md](CLAUDE.md) (Agent-Briefing,
+> Goldener Pfad, Sicherheit) + [BUILD-PLAN.md](BUILD-PLAN.md) (Meilensteine). Vollspec:
+> [SPEC.md](SPEC.md). Vision: [docs/VISION.md](docs/VISION.md).
 
 ---
 
-## Was das System ist — und was nicht
+## Was JETZT gilt (ein Prozess, kein Docker)
 
-**Das System ist** ein Baukasten, der Dokumente indexiert und durchsuchbar macht,
-damit jedes Deiner KI-Projekte (Claude Desktop, n8n, eigene Agents, Cursor, …)
-über ein einheitliches MCP-Tool auf Dein Wissen zugreifen kann.
+- **Native Desktop-App, kein Docker/VPS.** FastAPI + MCP unter `uvicorn` auf
+  `127.0.0.1`, in einer **pywebview/WebView2-Shell** ([app/desktop.py](app/desktop.py),
+  Tray/Autostart/Toast). Zwei Windows-Installer (Schreiber/Leser) via PyInstaller +
+  Inno-Setup ([build/](build/)).
+- **LanceDB = einziger Wissensspeicher** ([app/pipelines/store.py](app/pipelines/store.py),
+  im Vault) — ersetzt Qdrant **und** die Postgres-Korpus-Tabellen. Dazu ein lokales
+  **`appstate.sqlite`** (Keys/Users/Log/Graph, **nicht** im Vault).
+- **Embeddings: INT8-ONNX `intfloat/multilingual-e5-large`** (1024-dim, mehrsprachig),
+  direkt über onnxruntime — **kein Ollama/LLM**. Reranker `bge-reranker-v2-m3` ebenfalls
+  INT8-ONNX. Tagging + Graph sind **deterministisch, LLM-frei**.
+- **Suche ist MCP-only, read-only** (kein OAuth/TOTP): `rag_retrieve`, `rag_overview`,
+  `norm_lookup`, `rag_list_documents`, `rag_get_document`, `rag_stats`. Identität =
+  statischer Bearer-API-Key; Ordner-ACL serverseitig erzwungen.
+- **Admin-UI** = React/Vite-SPA ([app/frontend/](app/frontend/)), von FastAPI als
+  Static Files serviert, lokaler Auto-Login (127.0.0.1). **Keine Suchseite** (Suche läuft
+  über MCP); Dashboard/Dokumente/**Graph**/Keys/System/Wartung.
+- **Zwei Ordnungsebenen:** `folder_path` (freier, nestbarer Pfad) + Tags (`TEXT[]`,
+  cross-cutting). **Kein „Projekt"-Konzept** mehr.
+- **Rollen:** *Schreiber* (Ingest + Query, Docling/torch, schreibt Vault-Versionen) vs.
+  *Leser* (query-only, liest lokalen Cache am LanceDB-`current`-Tag).
 
-**Das System ist nicht** eine Chat-Oberfläche wie ChatGPT. Die Admin-UI ist
-nur zur Pflege gedacht — der eigentliche Zugriff passiert über MCP/REST
-aus Deinen Apps heraus.
+## Wissensgraph
 
----
-
-## Die vier Dienste auf einen Blick
-
-| Dienst | Port (intern) | Aufgabe | Image |
-|---|---|---|---|
-| `api` | 8000 (REST unter /api, MCP unter /mcp, React-Admin-UI als SPA) | Dein Python-Programm (FastAPI + React-Frontend + MCP) | Eigenes Build |
-| `qdrant` | 6333 | Vector-Datenbank | `qdrant/qdrant:latest` |
-| `ollama` | 11434 | Embedding-Modell + LLM | `ollama/ollama:latest` |
-| `postgres` | 5432 | Metadaten, User, API-Keys | `postgres:16` |
-
-Alle Dienste sind **nur intern erreichbar** (Docker-Netz `rag-net`),
-von außen kommt man nur über einen vorgeschalteten Caddy — entweder
-ein zentraler Edge-Caddy aus dem `julasim/Proxy`-Stack (Default,
-empfohlen, siehe [Deployment-Modi](#deployment-modi)) oder ein
-mitgelieferter eigener `rag-caddy` (Standalone-Override).
-
----
-
-## Zwei harte Prinzipien
-
-1. **Datensouveränität zuerst.** Default-LLM ist lokal (Ollama). OpenRouter
-   ist optional und nur pro Projekt zuschaltbar.
-2. **Einfach zu bedienen, sauber getrennt.** Ein `docker compose up -d`
-   startet alles. Jeder Dienst bleibt aber in seinem eigenen Container.
+Deterministischer Graph (Dokumente ↔ Normen/Tags/Aussteller/Ordner + Ähnlichkeiten),
+im Frontend als interaktive Ansicht (`/graph`). Der Schreiber baut ihn **manuell** per
+Button; das Ergebnis liegt als `.ragos/graph.json` im Vault, der Leser liest sie passiv.
+`GET /api/graph` ist **pro Aufrufer ACL-gefiltert** (jeder sieht nur seinen erlaubten
+Subgraphen; §13-Sicherheitsmodell in [CLAUDE.md](CLAUDE.md)).
 
 ---
 
-## Die drei Ordnungsebenen
+## Dev-Setup (Windows, nativ)
 
-Ein Dokument wird immer durch diese drei unabhängigen Dimensionen beschrieben:
+```powershell
+# Backend (Python 3.14)
+python -m venv .venv; .\.venv\Scripts\Activate.ps1
+pip install -e "app[writer,dev]"
+python app/desktop.py            # Shell  — oder:  cd app; uvicorn main:app
 
-| Ebene | Zweck | Beispiel |
-|---|---|---|
-| **Projekt** (= Qdrant-Collection) | Harte Trennung + Zugriffsrechte | `unternehmen`, `privat`, `schule` |
-| **Ordner** (`folder_path`, frei) | Hierarchische Ablage, entsteht dynamisch | `/Ausschreibungen/BVH_Musterstraße/` |
-| **Tags** (TEXT[], frei) | Cross-Cutting-Labels für Quer-Suche | `["dringend", "2026-Q2", "ÖNORM"]` |
-
-Keine Ordner-Templates. Keine Pflicht-Tags. Alles entsteht organisch
-pro Projekt.
-
----
-
-## Authentifizierung — zwei getrennte Welten
-
-| Welt | Wer? | Wie? | Menge |
-|---|---|---|---|
-| **Admin-UI** | Mensch | E-Mail + Passwort (bcrypt) | 1–2 User |
-| **MCP / REST** | Programme | API-Key (`rag_sk_…`), pro Projekt-Whitelist | beliebig viele |
-
-API-Keys werden in der Admin-UI erstellt, **einmal** angezeigt,
-danach nur noch als Hash gespeichert.
-
----
-
-## Deployment-Modi
-
-RAG OS unterstützt zwei Deployment-Modi. Wähle einen, je nachdem ob auf dem
-Host parallel ein zentraler Edge-Proxy läuft oder nicht.
-
-### Edge-Mode (Default, empfohlen)
-
-`rag-api` hängt am externen Docker-Netzwerk `proxy`. Ein zentraler Edge-Caddy
-(Repo [`julasim/Proxy`](https://github.com/julasim/Proxy), läuft unter
-`/opt/Proxy/` auf der VPS) macht TLS-Terminierung + Domain-Routing für ALLE
-App-Stacks auf der Maschine (KI_WIKI, Bau-OS, RAG_OS …).
-
-```bash
-docker compose up -d
+# Frontend (Vite)
+cd app/frontend; npm install
+npm run dev                      # Dev-Server
+npm run build                    # -> app/ui_static/ (vom Installer mitgebacken)
 ```
 
-Voraussetzungen:
-- `julasim/Proxy`-Stack ist auf der VPS aktiv (legt das `proxy`-Docker-Netz an)
-- Edge-Caddyfile hat einen Block für die RAG-Domain, der routet auf:
-  - `rag-api:8000` für `/api/*`, `/mcp/*` **und** `/` (FastAPI serviert auch das
-    React-Admin-Frontend als SPA) — es gibt nur noch **einen** Port (8000)
+Konfiguration über `app-settings.json` bzw. Env (`RAG_VAULT_PATH`, `RAG_SERVICE_ROLE`).
+SQLite unter `%LOCALAPPDATA%\RAG-OS\appstate.sqlite`, LanceDB im Vault — **keine DB-Server**.
+Kein automatisiertes Test-Setup; Verifikation über isolierte venv-/E2E-Skripte +
+`ruff check app`.
 
-### Standalone-Mode
+## Deployment = Installer bauen
 
-Bringt einen eigenen `rag-caddy` mit, der die Host-Ports 80/443 belegt.
-Nutzen, wenn KEIN zentraler Edge-Caddy parallel läuft.
-
-```bash
-docker compose -f docker-compose.yml -f docker-compose.standalone.yml up -d
-```
-
-Der mitgelieferte `Caddyfile` im Repo-Root wird in diesem Modus aktiv.
+Kein Docker, kein Proxy, kein VPS. „Deployment" heißt **Installer bauen** mit
+[build/build.ps1](build/build.ps1) (PyInstaller + Inno-Setup, Rollen Schreiber/Leser) und
+ausführen. Alle KI-Modelle sind **gebündelt** (kein Runtime-Download). Details:
+[BUILD-PLAN.md](BUILD-PLAN.md) + [CLAUDE.md](CLAUDE.md) §10.
 
 ---
 
-## Quickstart (auf dem VPS)
-
-```bash
-# 1. Repo holen (oder via OneDrive-Sync auf den Server bringen)
-cd /opt/rag
-
-# 2. Secrets anlegen
-cp .env.example .env
-# → .env editieren: POSTGRES_PASSWORD, ADMIN_EMAIL, usw.
-
-# 3. Starten — Edge-Mode (Default)
-docker compose up -d
-#    Für Standalone-Mode stattdessen:
-#    docker compose -f docker-compose.yml -f docker-compose.standalone.yml up -d
-
-# 4. Modelle laden (einmalig)
-docker compose exec ollama ollama pull bge-m3
-docker compose exec ollama ollama pull qwen2.5:3b-instruct
-
-# 5. Admin-UI öffnen
-# https://rag.deinedomain.at
-```
-
----
-
-## Projektstruktur
+## Projektstruktur (grob)
 
 ```
-RAG_OS/
-├── README.md                       ← Du bist hier
-├── docker-compose.yml              ← Edge-Mode-Default (4 Services, hängt an externem proxy-Netz)
-├── docker-compose.standalone.yml   ← Override: eigener rag-caddy (Ports 80/443)
-├── docker-compose.localonly.yml    ← Override: lokales Dev ohne Domain
-├── .env.example                    ← Secret-Template
-├── Caddyfile                       ← HTTPS-Routing (nur im Standalone-Mode aktiv)
-├── app/                            ← Dein Python-Programm
-│   ├── Dockerfile
-│   ├── pyproject.toml
-│   ├── main.py
-│   ├── api/                    ← REST-Endpunkte
-│   ├── mcp/                    ← MCP-Server-Adapter
-│   ├── ui/                     ← Streamlit-Admin
-│   ├── pipelines/              ← Haystack-YAMLs
-│   ├── db/                     ← Postgres-Models
-│   ├── auth/                   ← API-Keys + UI-Login
-│   └── ingest/                 ← Parser, Chunker, Folder-Watcher
-├── config/
-│   ├── projects.yml            ← Legacy-Seed (wird zur Migration aus alten Versionen genutzt)
-│   └── project_defaults.yml    ← Defaults + Initial-Seed für die `projects`-Tabelle
-├── docs/
-│   └── ARCHITECTURE.md         ← Tiefer-Einstieg
-└── data/                       ← (wird automatisch erzeugt)
-    ├── qdrant/
-    ├── postgres/
-    ├── ollama/
-    └── uploads/
+rag-os-app-lokal/
+├── CLAUDE.md            ← Agent-Briefing + Quelle der Wahrheit
+├── BUILD-PLAN.md        ← Meilenstein-/Fortschrittstabelle
+├── SPEC.md              ← verbindliche Spezifikation (Was/Warum)
+├── app/
+│   ├── desktop.py       ← pywebview/WebView2-Shell
+│   ├── main.py          ← FastAPI-Lifespan, Router, MCP-Mount, SPA-Fallback
+│   ├── config.py        ← settings() (einzige Config-Quelle)
+│   ├── api/             ← REST-Verwaltung (Dokumente/Keys/System/Wartung/Graph)
+│   ├── mcp_server/      ← MCP-Tools (Bearer-only, read-only)
+│   ├── auth/            ← API-Keys, UI-Login, kanonische Ordner-ACL (folders.py)
+│   ├── pipelines/       ← LanceDB-Store, Query (Hybrid+Rerank), Embedder/Reranker (ONNX)
+│   ├── ingest/          ← Parser/Chunker, Auto-Tag (deterministisch), Folder-Watcher
+│   ├── doc_ingest/      ← layout-aware Parsing/Chunking (Docling)
+│   ├── graph/           ← deterministischer Wissensgraph (L1/L2/Analyse + Export)
+│   ├── db/              ← SQLAlchemy-Models (appstate.sqlite)
+│   └── frontend/        ← React/Vite Admin-UI (-> app/ui_static/)
+├── build/               ← PyInstaller-Specs + Inno-Setup + fetch-models.py
+└── docs/                ← ARCHITECTURE.md (aktuell) · VISION.md · Audit-Records (historisch)
 ```
-
----
-
-## Evolution — Phasen
-
-- **Phase 0** Infrastruktur (Compose hoch, Modelle geladen, Health-Checks grün)
-- **Phase 1** Ingest PDF/DOCX, REST `/ingest` und `/query`
-- **Phase 2** MCP-Server, erstes `rag_search` in Claude Desktop
-- **Phase 3** Streamlit-Admin, API-Keys, Projekt-Trennung
-- **Phase 4** OCR, weitere Parser, Reranker, OpenRouter-Fallback
-- **Phase 5** Backups, Monitoring, zweiter UI-User
-
-Fine-Tuning kommt **später** als separates Wochenendprojekt, falls RAG
-allein nicht reicht.
 
 ---
 
 ## Lizenz
 
-MIT für den Eigencode. Die verwendeten Bibliotheken bleiben unter ihren
-jeweiligen Lizenzen (Haystack Apache 2.0, Qdrant Apache 2.0, Ollama MIT,
-BGE-M3 MIT, Qwen 2.5 Apache 2.0).
+MIT für den Eigencode. Bibliotheken unter ihren jeweiligen Lizenzen (LanceDB Apache 2.0,
+onnxruntime MIT, Docling MIT, multilingual-e5-large MIT, bge-reranker-v2-m3 Apache 2.0).

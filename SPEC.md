@@ -5,6 +5,19 @@
 > *Warum*; das *Wie* (Meilensteine) steht in Abschnitt 14.
 >
 > Stand: 2026-07-16 · Sprache: Deutsch · Autor der Entscheidungen: Julius Sima
+>
+> ⚠️ **Implementierungs-Abweichungen (as-built, seit M4/M5/M8g).** Dieser Spec hält das
+> *Was/Warum* fest; die Umsetzung ist an einigen Stellen bewusst anders gelaufen. **Es gilt
+> der as-built-Stand in [CLAUDE.md](CLAUDE.md) + [BUILD-PLAN.md](BUILD-PLAN.md):**
+> - **Embeddings: `intfloat/multilingual-e5-large` (INT8-ONNX), nicht bge-m3** (fastembed
+>   kennt bge-m3 nicht; M4). Dense **+ LanceDB-FTS/BM25** — kein Modell-Sparse-Vektor.
+> - **Tagging/Metadaten/Graph sind deterministisch, LLM-FREI** (M5). **Kein Ollama, kein
+>   qwen2.5** — der „Tagging-LLM" unten entfällt ersatzlos; der Schreiber braucht kein LLM.
+> - Reranker `bge-reranker-v2-m3` als **INT8-ONNX** (kein torch zur Laufzeit).
+> - Neu (Post-M8): Wissensgraph-**Visualisierung** `GET /api/graph`, per-User-ACL-gefiltert.
+>
+> Unverändert gültig: nativ/kein Docker, Vault + LanceDB, Schreiber/Leser-Rollen,
+> versionierte Index-Stände, MCP Bearer-only/read-only, keine OAuth/2FA.
 
 ---
 

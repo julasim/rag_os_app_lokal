@@ -389,7 +389,7 @@ Vollständige Befunde: [docs/SICHERHEITSKONZEPT.md](docs/SICHERHEITSKONZEPT.md) 
 - **Qdrant-Snapshot wird ins Bind-Mount `/data/backups` heruntergeladen**
   ([app/backup/engine.py](app/backup/engine.py), Collection-Snapshot) — vorher
   lag er nur im Volume und war nach `down -v` weg. Neu:
-  [scripts/restore.sh](scripts/restore.sh) + [docs/DISASTER-RECOVERY.md](docs/DISASTER-RECOVERY.md).
+  [scripts/restore.sh](scripts/restore.sh) + docs/DISASTER-RECOVERY.md (2026-07-21 entfernt, VPS-Ära).
   Restore end-to-end getestet (Postgres + Qdrant).
 - **Compose-Härtung** ([docker-compose.yml](docker-compose.yml)): Healthchecks
   für qdrant/ollama, `depends_on: service_healthy`, `deploy.resources.limits`
@@ -421,7 +421,7 @@ Vollständige Befunde: [docs/SICHERHEITSKONZEPT.md](docs/SICHERHEITSKONZEPT.md) 
   (generische udev-Regel → systemd → [rag-offsite-handler.sh](scripts/rag-offsite-handler.sh)
   → [backup-to-external.sh](scripts/backup-to-external.sh); mount→verifizierte
   Kopie→aushängen). Verweigert Schreiben, wenn Ziel kein echter Mountpoint ist.
-  Doku: [docs/DISASTER-RECOVERY.md](docs/DISASTER-RECOVERY.md).
+  Doku: docs/DISASTER-RECOVERY.md (2026-07-21 entfernt, VPS-Ära).
 
 **Noch offen (Prozess/Infra bzw. Entscheidung):** externe Platte am Host mit
 Label `RAG-BACKUP` einrichten + `install-offsite-autotrigger.sh` einmalig laufen

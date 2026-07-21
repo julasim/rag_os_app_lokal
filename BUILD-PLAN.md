@@ -2,8 +2,11 @@
 
 > Konsolidierte, ausführbare Bauanleitung. Ergänzt `SPEC.md` (das *Was/Warum*) um das *Wie*.
 > Fundament (M0 + Tool-Stack + Kern-Kette) ist **empirisch verifiziert** (siehe §2).
-> Stand: 2026-07-20 · Ziel-Python: **3.14** (Schreiber + Leser, verifiziert).
+> Stand: 2026-07-21 · Ziel-Python: **3.14** (Schreiber + Leser, verifiziert).
 > **✅ M1–M8 KOMPLETT. Beide Windows-Installer gebaut & Payload-Boot verifiziert** (auf `main` `c5ffd9b`).
+> **Post-M8 (2026-07-21):** Wissensgraph-**Visualisierung** (`/graph` + `GET /api/graph`),
+> **per-User-ACL** (Schnittmenge, §13-verifiziert 19/19), Lesequelle `.ragos/graph.json` im
+> Vault (manueller Rebuild, Writer-only; Leser liest passiv). Commit `568e778`.
 
 ---
 
@@ -71,9 +74,9 @@ Normen-/Richtlinien-Wissensspeicher**, den KI-Clients (Claude Desktop u. a.) üb
 
 ## 2. Bereits verifiziert (nicht erneut prüfen)
 
-- **M0-Gate GRÜN** (`spike/m0_lancedb.py`): Hybrid + `norm_id` + Versionierung + Publish/Cache in-process.
+- **M0-Gate GRÜN** (Spike `spike/m0_lancedb.py`, 2026-07-21 als toter Code entfernt — Ergebnis hier festgehalten): Hybrid + `norm_id` + Versionierung + Publish/Cache in-process.
 - **Tool-Stack** (3 Subagenten, 2026-07-18): torch 2.13/docling/rapidocr/pywebview/PyInstaller haben cp314-Wheels → **eine 3.14-Umgebung genügt**. Kern-Kette spielt E2E zusammen. LanceDB-Tags-API real (`table.tags.create/list/get_version`, `checkout(tag)`, `read_consistency_interval`).
-- **Graph-Nutzen** (`spike/graph_quality.py`): Norm-Referenz-Fastpath recovert Zitierer, die reines Hybrid bei kleinem k verpasst; schwere PPR-Analytik marginal.
+- **Graph-Nutzen** (Spike `spike/graph_quality.py`, 2026-07-21 als toter Code entfernt — Ergebnis hier festgehalten): Norm-Referenz-Fastpath recovert Zitierer, die reines Hybrid bei kleinem k verpasst; schwere PPR-Analytik marginal.
 
 ---
 

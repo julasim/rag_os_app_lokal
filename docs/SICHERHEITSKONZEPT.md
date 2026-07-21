@@ -1,5 +1,11 @@
 # Sicherheitskonzept — RAG OS
 
+> 🗄️ **HISTORISCH (Audit-Record, Stand 2026-07-11).** Punkt-in-Zeit-Audit aus der
+> **Docker/Qdrant/Postgres/OAuth-Ära**. Die Infrastruktur-Bezüge sind überholt (heute:
+> native App, LanceDB, SQLite, MCP Bearer-only, kein OAuth/Docker). Die **Sicherheits-
+> Prinzipien und behobenen Befunde** leben weiter in **[CLAUDE.md](../CLAUDE.md) §13** —
+> nicht rückbauen. Dieses Dokument bleibt als Nachweis, was wann warum auditiert wurde.
+
 > **Stand:** 2026-07-11 · **Autor:** Code-Review (statische Analyse)
 > **Kontext:** Ergänzung zum Pre-Prod-Audit (Juli 2026, CLAUDE.md §13) vor der
 > Mehrbenutzer-Einführung bei SIMA Architecture.

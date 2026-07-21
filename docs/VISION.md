@@ -1,5 +1,13 @@
 # RAG OS — Vision
 
+> 🧭 **Der Vision-KERN gilt weiter; die INFRA-Details unten sind überholt.** Noch gültig:
+> selbstgehosteter Such-Knoten, „das System antwortet nicht — es liefert" (retrieve-only,
+> der Client formuliert), selbst-pflegende Ablage, kein Chat/DMS. **Überholt** (pre-native-
+> Rebuild): „Projekt = Qdrant-Collection" (heute nur Ordner + Tags, EINE LanceDB-Tabelle),
+> Ollama/lokaler-LLM-Antwortpfad + LLM-Tagging (heute LLM-frei, INT8-ONNX, deterministisch),
+> `rag_search`/`rag_export_answer` (heute `rag_retrieve` MCP-only), VPS/Docker (heute native
+> Windows-App), Phasen-Status (siehe **[../CLAUDE.md](../CLAUDE.md)** + **[../BUILD-PLAN.md](../BUILD-PLAN.md)**).
+
 Diese Datei beschreibt, **was das System am Ende sein soll**. Sie ist die Nordsicht
 für jede Architektur-Entscheidung. Wenn ein Vorschlag mit dieser Vision in Konflikt
 steht, gewinnt die Vision — oder die Vision wird bewusst angepasst, *bevor* der
