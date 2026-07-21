@@ -458,6 +458,27 @@ zum ACL-Umgehungspfad werden. Die Regeln (verifiziert, siehe Änderungslog):
   vs. User/OAuth fail-safe (leer=nichts). Der Graph erbt die vom Aufrufer bereits
   aufgelösten `folder_paths` — er trifft **keine** eigene ACL-Entscheidung.
 
+### Nachtrag 2026-07-21 (Graph-**Visualisierung** `GET /api/graph`) — sicherheitskritisch, nicht rückbauen
+
+Der Graph-Viz-Endpunkt ([app/api/system.py](app/api/system.py) `get_graph`) war anfangs
+**admin-only, aber ungefiltert** (lieferte alle Dateinamen/Ordner/Tags an jeden
+admin-scoped Key → §13-Verstoß). Jetzt **per-User-ACL**, nach denselben Regeln:
+
+- **Eine flache Lesequelle:** `.ragos/graph.json` im Vault ([config.py](app/config.py)
+  `graph_json_path`), vom Schreiber beim **manuell ausgelösten** Rebuild geschrieben
+  ([app/graph/refresh.py](app/graph/refresh.py) `_export_graph_json`, Writer-only). Leser
+  **lesen sie nur** — kein Sync, kein Import, keine appstate-Graph-Tabellen auf dem Leser.
+  Rebuild auf dem Leser ist per 409 gesperrt (würde die gute Datei leer überschreiben).
+- **Sichtbarkeit = Schnittmenge** über die puren Prädikate `key_allows_folder` /
+  `user_allows_folder` ([auth/folders.py](app/auth/folders.py), **keine** DB-Query →
+  identisch auf Schreiber/Leser): sichtbare Docs → daran hängende Entities → Kante nur
+  wenn **beide** Endpunkte behalten. Eine `near_dup`/`similar_to`/`supersedes`-Kante über
+  die Ordnergrenze offenbart **kein** fremdes Doc. Erst ACL, **dann** `types`/`limit`.
+  Fail-safe: leere ACL → leere Antwort. **Verifiziert** (isoliertes venv, 19/19:
+  `/steuer/`-User sieht kein `/mietrecht/`, keine Cross-`near_dup`-Kante, Segmentgrenze
+  `/steuer` ≠ `/steuer2025-fremd/`). Neue Felder, die auf andere Docs zeigen → hier
+  mitfiltern, nicht am `visible`-Set vorbei.
+
 ## 14. Büro-Brain — Retrieval-Qualität
 
 Ausbau für den Einsatz als Wissens-Brain (Normen/Standards/Anleitungen). Die

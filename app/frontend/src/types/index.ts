@@ -32,6 +32,7 @@ export interface HealthResponse {
   status: string;
   version: string;
   services: { sqlite: boolean; lancedb: boolean };
+  role: string;   // writer | reader
 }
 
 export interface MetricsResponse {

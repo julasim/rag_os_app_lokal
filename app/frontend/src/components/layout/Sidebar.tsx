@@ -9,6 +9,7 @@ interface NavItem {
 const workspaceNav: NavItem[] = [
   { path: '/dashboard', label: 'Dashboard' },
   { path: '/documents', label: 'Dokumente' },
+  { path: '/graph', label: 'Graph' },
 ];
 
 const adminNav: NavItem[] = [
@@ -109,7 +110,8 @@ export default function Sidebar() {
           ))}
         </div>
 
-        {/* Verwaltung */}
+        {/* Verwaltung — nur für Admins (Nutzer/Keys/System sind admin-only) */}
+        {user?.role === 'admin' && (
         <div>
           <div
             style={{
@@ -139,6 +141,7 @@ export default function Sidebar() {
             </Link>
           ))}
         </div>
+        )}
       </nav>
 
       {/* User Card */}

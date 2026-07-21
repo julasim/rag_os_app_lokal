@@ -121,6 +121,32 @@ class HealthResponse(BaseModel):
     status: str
     version: str
     services: dict[str, bool]
+    role: str = "writer"       # writer | reader — Frontend blendet z.B. den Graph-Rebuild aus
+
+
+# --- Wissensgraph (Track D) — Visualisierung ---
+class GraphNodeDTO(BaseModel):
+    id: str                    # = node_key ("{type}:{canonical}")
+    type: str                  # document | norm | legal | tag | issuer | folder
+    label: str                 # lesbar (Dateiname / Wort / "§16 MRG" / Issuer)
+    community: int | None
+    pagerank: float
+    doc_id: str | None         # nur document-Nodes → UI-Deeplink
+
+
+class GraphEdgeDTO(BaseModel):
+    source: str                # src_key
+    target: str                # tgt_key
+    relation: str              # references | supersedes | issued_by | has_tag | in_folder | similar_to | near_dup
+    weight: float              # w_eff
+
+
+class GraphResponse(BaseModel):
+    nodes: list[GraphNodeDTO]
+    edges: list[GraphEdgeDTO]
+    # Nach ACL-/Typ-Filter: nodes/edges/communities = GEZEIGT (nach `limit`-Kappung),
+    # total_nodes/total_edges = gesamter erlaubter Umfang, truncated = 1 wenn gekappt.
+    stats: dict[str, int]
 
 
 LoginResponse.model_rebuild()

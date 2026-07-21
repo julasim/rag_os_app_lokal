@@ -9,6 +9,7 @@ const Keys = React.lazy(() => import('./pages/Keys'));
 const Users = React.lazy(() => import('./pages/Users'));
 const System = React.lazy(() => import('./pages/System'));
 const Maintenance = React.lazy(() => import('./pages/Maintenance'));
+const Graph = React.lazy(() => import('./pages/Graph'));
 
 function Loading() {
   return (
@@ -140,6 +141,25 @@ const router = createBrowserRouter([
         element: (
           <Suspense fallback={<Loading />}>
             <Maintenance />
+          </Suspense>
+        ),
+      },
+    ],
+  },
+  {
+    path: '/graph',
+    element: (
+      <AppShell
+        title="Wissensgraph"
+        sub="Dokumente ↔ Normen/Tags — interaktiv"
+      />
+    ),
+    children: [
+      {
+        index: true,
+        element: (
+          <Suspense fallback={<Loading />}>
+            <Graph />
           </Suspense>
         ),
       },

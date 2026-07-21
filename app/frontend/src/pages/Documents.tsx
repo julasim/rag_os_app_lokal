@@ -1,8 +1,10 @@
 import React, { useState, useRef, useMemo, useEffect } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   listDocuments,
   listFolders,
+  getDocument,
   deleteDocument,
   deleteFolder,
   downloadDocument,
@@ -758,6 +760,14 @@ export default function Documents() {
   const [page, setPage] = useState(1);
   const [selectedDoc, setSelectedDoc] = useState<Document | null>(null);
   const [layoutMode, setLayoutMode] = useState<'grid' | 'list'>('grid');
+
+  // Deep-Link aus dem Graph: /documents?doc=<id> → Dokument direkt auswählen.
+  const [searchParams] = useSearchParams();
+  useEffect(() => {
+    const id = searchParams.get('doc');
+    if (!id) return;
+    getDocument(id).then(setSelectedDoc).catch(() => {});
+  }, [searchParams]);
 
   const [selectedDocIds, setSelectedDocIds] = useState<Set<string>>(new Set());
   const [suggestLoading, setSuggestLoading] = useState(false);

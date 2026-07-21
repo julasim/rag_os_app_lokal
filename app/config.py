@@ -132,6 +132,14 @@ class Settings(BaseSettings):
         return str(self.ragos_dir / "index.lance")
 
     @property
+    def graph_json_path(self) -> Path:
+        """Wissensgraph als flache JSON-Datei im Vault (`.ragos/graph.json`) — die
+        EINZIGE Lesequelle für die Graph-Visualisierung. Der Schreiber schreibt sie
+        beim (manuell ausgelösten) Rebuild; Leser lesen sie nur passiv. Bewusst im
+        Vault (nicht in appstate), damit ein Leser dieselbe Datei sieht — kein Sync."""
+        return self.ragos_dir / "graph.json"
+
+    @property
     def models_dir(self) -> Path:
         """Gebackene/heruntergeladene KI-Modelle (M8d), pro Rechner."""
         return _APPDATA / "models"
