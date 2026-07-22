@@ -47,6 +47,22 @@ Sie enthält das, was beim Code-Lesen *nicht* offensichtlich ist.
 >   Postgres-/Qdrant-/Ollama-/Haystack-Deps.
 
 > **Änderungslog:**
+> - 2026-07-22 — **Multi-Vault (Firmen-Trennung) + Graph-Viz-ACL.** (1) **Wissensgraph-
+>   Visualisierung** (`/graph` + `GET /api/graph`) **per-User-ACL-gefiltert** (Schnittmenge,
+>   §13 — 19/19 verifiziert); Lesequelle `.ragos/graph.json` im Vault (manueller Rebuild,
+>   Writer-only). Bug gefixt: `analyze_graph` ZeroDivisionError bei isolierten Communities
+>   (`networkx.conductance`, Volumen 0). (2) **Zwei-DB-Split (§4):** `credentials.sqlite`
+>   (Keys/Nutzer, lokal, firmenübergreifend) + `<vault>/.ragos/state.sqlite` (Content, im
+>   Vault → Firma = portabler Ordner). Neue `LocalBase`, `get_local_session()` nur für Auth,
+>   4 DB-übergreifende FKs → Audit-UUIDs, Vault-DB mit Rollback-Journal (SMB). Einmal-
+>   Migration Alt-appstate ([db/migrate.py](app/db/migrate.py), idempotent, → `.migrated`).
+>   Tray-Untermenü „Vault (Firma)" + Vault-Anzeige auf der System-Seite. Reader zieht
+>   `state.sqlite` in den Cache. **Live verifiziert** (echtes Backend, 2 Vaults parallel:
+>   saubere Trennung, 3 Docs migriert, kein Reimport). Auf `main` bis `c109afc`.
+> - 2026-07-21 — **Doku auf nativen Stand + toten Spike-Code entfernt.** `spike/` gelöscht
+>   (Wegwerf-Spikes); `docs/DEPLOYMENT.md`+`DISASTER-RECOVERY.md` (tote Docker/Qdrant-Infra)
+>   raus; README/ARCHITECTURE neu auf nativen Stack; SPEC/BUILD-PLAN aktualisiert; Audit-
+>   Records historisch markiert. Auf `main` (`27d4bea`).
 > - 2026-07-21 — **M8g: Ingest-Speed (INT8-Embedder) + Tag-Fix.** Zwei Nutzer-Bugs:
 >   Ingest „ewig lang" + Tags komplett falsch. **Diagnose (hart gemessen):** der Engpass
 >   ist das **Embedding** (~1 s/Chunk, e5-large fp32 auf CPU = **95 %** der Ingest-Zeit;

@@ -19,8 +19,10 @@ der Client — das System **liefert Chunks + Quellen, es antwortet nicht selbst*
   Tray/Autostart/Toast). Zwei Windows-Installer (Schreiber/Leser) via PyInstaller +
   Inno-Setup ([build/](build/)).
 - **LanceDB = einziger Wissensspeicher** ([app/pipelines/store.py](app/pipelines/store.py),
-  im Vault) — ersetzt Qdrant **und** die Postgres-Korpus-Tabellen. Dazu ein lokales
-  **`appstate.sqlite`** (Keys/Users/Log/Graph, **nicht** im Vault).
+  im Vault) — ersetzt Qdrant **und** die Postgres-Korpus-Tabellen.
+- **Zwei SQLite-DBs (Multi-Vault):** `<vault>/.ragos/state.sqlite` (Dokumente/Chunks/Graph/
+  Logs, **im Vault** → Firma = ein portabler Ordner) + `credentials.sqlite` (Keys/Nutzer,
+  **lokal** pro Rechner, firmenübergreifend). Vault wechseln über das Tray.
 - **Embeddings: INT8-ONNX `intfloat/multilingual-e5-large`** (1024-dim, mehrsprachig),
   direkt über onnxruntime — **kein Ollama/LLM**. Reranker `bge-reranker-v2-m3` ebenfalls
   INT8-ONNX. Tagging + Graph sind **deterministisch, LLM-frei**.
@@ -60,7 +62,8 @@ npm run build                    # -> app/ui_static/ (vom Installer mitgebacken)
 ```
 
 Konfiguration über `app-settings.json` bzw. Env (`RAG_VAULT_PATH`, `RAG_SERVICE_ROLE`).
-SQLite unter `%LOCALAPPDATA%\RAG-OS\appstate.sqlite`, LanceDB im Vault — **keine DB-Server**.
+DBs: `%LOCALAPPDATA%\RAG-OS\credentials.sqlite` (Keys/Nutzer, lokal) + `<vault>\.ragos\state.sqlite`
+(Content) + LanceDB im Vault — **keine DB-Server**.
 Kein automatisiertes Test-Setup; Verifikation über isolierte venv-/E2E-Skripte +
 `ruff check app`.
 
@@ -91,7 +94,7 @@ rag-os-app-lokal/
 │   ├── ingest/          ← Parser/Chunker, Auto-Tag (deterministisch), Folder-Watcher
 │   ├── doc_ingest/      ← layout-aware Parsing/Chunking (Docling)
 │   ├── graph/           ← deterministischer Wissensgraph (L1/L2/Analyse + Export)
-│   ├── db/              ← SQLAlchemy-Models (appstate.sqlite)
+│   ├── db/              ← SQLAlchemy-Models + Split (credentials lokal / state im Vault) + Migration
 │   └── frontend/        ← React/Vite Admin-UI (-> app/ui_static/)
 ├── build/               ← PyInstaller-Specs + Inno-Setup + fetch-models.py
 └── docs/                ← ARCHITECTURE.md (aktuell) · VISION.md · Audit-Records (historisch)

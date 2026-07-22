@@ -170,13 +170,9 @@ class Settings(BaseSettings):
     @property
     def appstate_db_path(self) -> Path:
         """LEGACY-DB (eine appstate mit ALLEN Tabellen). Seit dem Multi-Vault-Split
-        nur noch **Migrationsquelle** (siehe db/session.py `run_migration_if_needed`).
+        nur noch **Migrationsquelle** (db/migrate.py) + Basis für den Log-Ordner.
         Aktiv sind stattdessen `credentials_db_path` (lokal) + `vault_db_path` (im Vault)."""
         return _APPDATA / "appstate.sqlite"
-
-    @property
-    def appstate_db_url(self) -> str:
-        return f"sqlite+aiosqlite:///{self.appstate_db_path.as_posix()}"
 
     # --- Multi-Vault: Credentials LOKAL, Content IM VAULT (pro Firma getrennt) ---
     @property

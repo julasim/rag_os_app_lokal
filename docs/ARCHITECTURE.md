@@ -18,10 +18,16 @@ WebView2-Shell — kein Netzwerk-Dienst, keine offenen Ports nach außen.
 
 ## 2. Speicher — zwei Orte, klare Rollen
 
-| Speicher | Wo | Inhalt | Wahrheit über … |
+| Speicher | Wo | Inhalt | Zugriff |
 |---|---|---|---|
-| **LanceDB** (`chunks`) | im **Vault** (`.ragos/index.lance`) | Chunk-Vektoren + Payload (Ordner/Tags/Metadaten), FTS-Index | „**wo** steht es" |
-| **appstate.sqlite** | lokal (`%LOCALAPPDATA%\RAG-OS`) | Dokumente, Keys, Users, Query-Log, **Graph-Tabellen** | „**was** haben wir" |
+| **LanceDB** (`chunks`) | im **Vault** (`.ragos/index.lance`) | Chunk-Vektoren + Payload (Ordner/Tags/Metadaten), FTS-Index — „**wo** steht es" | `pipelines/store.py` |
+| **state.sqlite** | im **Vault** (`.ragos/state.sqlite`) | Dokumente, Chunk-Meta, **Graph**, Query-Log, Jobs — „**was** haben wir" (pro Firma) | `get_session()` |
+| **credentials.sqlite** | **lokal** (`%LOCALAPPDATA%\RAG-OS`) | `ui_users` + `api_keys` — nie auf NAS, maschinenweit über alle Firmen | `get_local_session()` |
+
+**Multi-Vault (Firmen-Trennung):** Content liegt **im** Vault → eine Firma = ein portabler
+Ordner. Credentials bleiben **lokal**. Vault wechseln: Tray „Vault (Firma)" → Neustart.
+Keine DB-übergreifenden FKs; Vault-DB nutzt Rollback-Journal (SMB-tauglich). Details:
+[../CLAUDE.md](../CLAUDE.md) §4.
 
 Driften die beiden auseinander (Doc in SQLite, kein Chunk in LanceDB) → **Bug**, nicht
 Feature. Es gibt **genau eine** LanceDB-Tabelle für alle Dokumente (keine Collection pro
@@ -73,7 +79,7 @@ Bearer-only, read-only; UI hat lokalen Auto-Login (127.0.0.1).
 
 Deterministisch (kein LLM): L1 (Regex-Normverweise + supersedes/issued_by/has_tag/
 in_folder), L2 (Ähnlichkeit: similar_to / near_dup), Analyse (Louvain-Communities +
-PageRank). Working-Store = `graph_*`-Tabellen in appstate; Retrieval liest einen
+PageRank). Working-Store = `graph_*`-Tabellen in der Vault-`state.sqlite`; Retrieval liest einen
 RAM-Snapshot ([graph/store.py](../app/graph/store.py)). **Visualisierung** liest eine flache
 `.ragos/graph.json` im Vault (vom manuellen Rebuild geschrieben, Writer-only); `GET
 /api/graph` ist **pro Aufrufer ACL-gefiltert** — Schnittmenge, nie Vereinigung (§13).

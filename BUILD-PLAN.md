@@ -7,6 +7,10 @@
 > **Post-M8 (2026-07-21):** Wissensgraph-**Visualisierung** (`/graph` + `GET /api/graph`),
 > **per-User-ACL** (Schnittmenge, §13-verifiziert 19/19), Lesequelle `.ragos/graph.json` im
 > Vault (manueller Rebuild, Writer-only; Leser liest passiv). Commit `568e778`.
+> **Post-M8 (2026-07-22):** **Multi-Vault (Firmen-Trennung)** — Zwei-DB-Split: `credentials.sqlite`
+> (Keys/Nutzer, lokal, firmenübergreifend) + `<vault>/.ragos/state.sqlite` (Content, im Vault →
+> Firma = portabler Ordner). Migration Alt-appstate ([db/migrate.py](app/db/migrate.py)),
+> Tray-Vault-Auswahl, Reader-State-Cache. **Live verifiziert** (2 Vaults parallel). Bis `c109afc`.
 
 ---
 
