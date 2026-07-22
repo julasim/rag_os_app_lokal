@@ -47,6 +47,13 @@ Sie enthält das, was beim Code-Lesen *nicht* offensichtlich ist.
 >   Postgres-/Qdrant-/Ollama-/Haystack-Deps.
 
 > **Änderungslog:**
+> - 2026-07-22 — **Graph-UI-Feinschliff + Uninstaller + DSGVO-Konzept.** Graph: Knotengröße
+>   per Slider (`nodeRelSize`), Knoten kleiner (PageRank-Skalierung ×320→×30), Kanten ohne
+>   Pfeile (nur Linien). Installer: Uninstaller entfernt den Programmordner vollständig
+>   (`[UninstallDelete] {app}` in beiden `.iss`; Vault-/Nutzerdaten bleiben). Neu
+>   [docs/DATENSCHUTZ.md](docs/DATENSCHUTZ.md) — technische DSGVO-Übersicht (Datenkarte /
+>   Löschung / Retention + offene Betreiber-Punkte: Cloud-LLM-Transfer, At-Rest-
+>   Verschlüsselung, restlose Löschung). Auf `main` bis `2b4ef3c`.
 > - 2026-07-22 — **Multi-Vault (Firmen-Trennung) + Graph-Viz-ACL.** (1) **Wissensgraph-
 >   Visualisierung** (`/graph` + `GET /api/graph`) **per-User-ACL-gefiltert** (Schnittmenge,
 >   §13 — 19/19 verifiziert); Lesequelle `.ragos/graph.json` im Vault (manueller Rebuild,
@@ -335,6 +342,8 @@ Keys, System, Wartung); **keine** Suchseite mehr (Suche läuft über MCP, §5).
 ## 13. Sicherheits-Audit Juli 2026 — behobene Befunde & Absicherung
 
 Vor der geplanten Mehrbenutzer-Einführung wurde ein vollständiges Audit gefahren.
+**DSGVO-Übersicht (Datenkarte, Löschung, Retention, offene Betreiber-Punkte):**
+[docs/DATENSCHUTZ.md](docs/DATENSCHUTZ.md).
 
 > **Lesehinweis (nach dem nativen Umbau):** Die Infrastruktur-Bezüge unten sind
 > **historisch** (Qdrant→LanceDB, Postgres→SQLite, OAuth/TOTP entfernt, kein

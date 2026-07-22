@@ -97,7 +97,7 @@ rag-os-app-lokal/
 │   ├── db/              ← SQLAlchemy-Models + Split (credentials lokal / state im Vault) + Migration
 │   └── frontend/        ← React/Vite Admin-UI (-> app/ui_static/)
 ├── build/               ← PyInstaller-Specs + Inno-Setup + fetch-models.py
-└── docs/                ← ARCHITECTURE.md (aktuell) · VISION.md · Audit-Records (historisch)
+└── docs/                ← ARCHITECTURE.md · DATENSCHUTZ.md (DSGVO) · VISION.md · Audit-Records (historisch)
 ```
 
 ---
