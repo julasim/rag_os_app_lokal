@@ -39,7 +39,7 @@ export default function System() {
       </div>
 
       {/* MCP-Anbindung (Claude Desktop) */}
-      <McpConnectCard />
+      <McpConnectCard vaultLabel={health?.vault_label} />
 
       <div className="bg-white border border-[#ededed] rounded-lg" style={{ overflow: 'hidden' }}>
         <div
@@ -93,8 +93,9 @@ export default function System() {
   );
 }
 
-function McpConnectCard() {
+function McpConnectCard({ vaultLabel }: { vaultLabel?: string }) {
   const [copied, setCopied] = useState(false);
+  const mono = { fontFamily: 'ui-monospace, monospace' } as const;
   const mcpUrl = window.location.origin + '/mcp';
   const cfg = {
     mcpServers: {
@@ -130,10 +131,17 @@ function McpConnectCard() {
       <p style={{ fontSize: 12.5, color: '#525252', margin: '0 0 8px', lineHeight: 1.5 }}>
         Über MCP durchsucht <b>Claude Desktop</b> diese Wissensdatenbank direkt (read-only).
         Config eintragen unter <b>Einstellungen → Entwickler → „Edit Config"</b>,{' '}
-        <code style={{ fontFamily: 'ui-monospace, monospace' }}>DEIN_RAG_SK_KEY</code> durch einen
-        Key von der Seite <b>„API-Keys"</b> ersetzen, dann Claude Desktop neu starten. Diese App
-        muss laufen; <code style={{ fontFamily: 'ui-monospace, monospace' }}>npx</code> (Node) wird benötigt.
+        <code style={mono}>DEIN_RAG_SK_KEY</code> durch einen Key von der Seite <b>„API-Keys"</b>{' '}
+        ersetzen, dann Claude Desktop neu starten. Diese App muss laufen;{' '}
+        <code style={mono}>npx</code> (Node) wird benötigt.
       </p>
+      <div style={{ fontSize: 12, color: '#525252', margin: '0 0 8px', lineHeight: 1.5, background: '#fafafa', border: '1px solid #ededed', borderRadius: 6, padding: '8px 10px' }}>
+        <b>Mehrere Firmen:</b> Der Connector durchsucht immer die <b>gerade aktive Firma</b>
+        {vaultLabel ? <> (aktuell: <code style={mono}>{vaultLabel}</code>)</> : null}. Ein Key gilt{' '}
+        <b>maschinenweit für alle Firmen</b> — nicht pro Firma neu eintragen. Wechselst du im Tray die
+        Firma, startet die App neu; danach durchsucht Claude automatisch die neue Firma (URL/Port bleiben
+        gleich, solange nur <b>eine</b> Instanz läuft).
+      </div>
       <pre
         style={{
           margin: 0,
