@@ -138,7 +138,13 @@ async def analyze_graph() -> AnalyzeStats:
     for cid, members in enumerate(communities):
         mem = set(members)
         if 0 < len(mem) < n_total:
-            cond = float(nx.conductance(g, mem, weight="weight"))
+            try:
+                cond = float(nx.conductance(g, mem, weight="weight"))
+            except ZeroDivisionError:
+                # Conductance ist undefiniert, wenn eine Seite Volumen 0 hat — eine
+                # Community aus nur isolierten Knoten (Grad 0, z.B. kantenlose
+                # norm-Selbstidentitaet) oder deren Komplement. Kein Fehler, nur „n/a".
+                cond = None
         else:
             cond = None
         top = max(mem, key=lambda x: pagerank.get(x, 0.0))
