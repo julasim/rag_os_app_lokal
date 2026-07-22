@@ -51,6 +51,12 @@ Name: "{userdesktop}\RAG-OS (Leser)"; Filename: "{app}\{#ExeName}"; Parameters: 
 ; Autostart (nur wenn Task gewaehlt) - --tray; die Rolle kommt aus app-settings.json.
 Root: HKCU; Subkey: "Software\Microsoft\Windows\CurrentVersion\Run"; ValueType: string; ValueName: "RAG-OS-Leser"; ValueData: """{app}\{#ExeName}"" --tray"; Flags: uninsdeletevalue; Tasks: autostart
 
+[UninstallDelete]
+; {app} vollstaendig entfernen (auch Laufzeit-Reste wie __pycache__/Logs), damit nach
+; der Deinstallation KEIN Ordner der installierten App zurueckbleibt. Betrifft NUR den
+; Programmordner - die Vault-/Nutzerdaten unter {localappdata}\RAG-OS bleiben unberuehrt.
+Type: filesandordirs; Name: "{app}"
+
 [Run]
 Filename: "{tmp}\MicrosoftEdgeWebview2Setup.exe"; Parameters: "/silent /install"; Check: NeedsWebView2; Flags: waituntilterminated skipifdoesntexist
 Filename: "{app}\{#ExeName}"; Parameters: "{#RoleArg}"; Description: "RAG-OS jetzt starten"; Flags: postinstall nowait skipifsilent
