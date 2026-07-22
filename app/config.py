@@ -169,12 +169,38 @@ class Settings(BaseSettings):
 
     @property
     def appstate_db_path(self) -> Path:
-        """Lokale App-DB (Keys/Users/Query-Log), NIE im Vault (M2)."""
+        """LEGACY-DB (eine appstate mit ALLEN Tabellen). Seit dem Multi-Vault-Split
+        nur noch **Migrationsquelle** (siehe db/session.py `run_migration_if_needed`).
+        Aktiv sind stattdessen `credentials_db_path` (lokal) + `vault_db_path` (im Vault)."""
         return _APPDATA / "appstate.sqlite"
 
     @property
     def appstate_db_url(self) -> str:
         return f"sqlite+aiosqlite:///{self.appstate_db_path.as_posix()}"
+
+    # --- Multi-Vault: Credentials LOKAL, Content IM VAULT (pro Firma getrennt) ---
+    @property
+    def credentials_db_path(self) -> Path:
+        """Keys + Nutzer — bleiben LOKAL pro Rechner (nie auf NAS/Vault), maschinenweit
+        über alle Firmen-Vaults geteilt."""
+        return _APPDATA / "credentials.sqlite"
+
+    @property
+    def credentials_db_url(self) -> str:
+        return f"sqlite+aiosqlite:///{self.credentials_db_path.as_posix()}"
+
+    @property
+    def vault_db_path(self) -> Path:
+        """Content (Dokumente/Chunks/Graph/Logs/Jobs) — liegt IM Vault, damit eine Firma
+        = ein selbst-beschreibender, portabler Ordner ist. Der Leser liest die vom Sync
+        mitgezogene Cache-Kopie (neben dem LanceDB-Cache), nie live über SMB."""
+        if self.is_reader:
+            return Path(self.reader_cache_uri).parent / "state.sqlite"
+        return self.ragos_dir / "state.sqlite"
+
+    @property
+    def vault_db_url(self) -> str:
+        return f"sqlite+aiosqlite:///{self.vault_db_path.as_posix()}"
 
     @property
     def ragos_config_path(self) -> Path:

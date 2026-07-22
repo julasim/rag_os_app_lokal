@@ -46,6 +46,24 @@ def set_vault_path(path: str) -> None:
     save(d)
 
 
+def get_recent_vaults() -> list[dict]:
+    """Zuletzt genutzte Vaults (Firmen) — für den Schnellwechsel im Tray.
+    Liste von {"path", "label"}, neueste zuerst."""
+    v = load().get("recent_vaults")
+    return [r for r in v if isinstance(r, dict) and r.get("path")] if isinstance(v, list) else []
+
+
+def add_recent_vault(path: str, label: str | None = None) -> None:
+    """Vault vorne einreihen (dedupliziert), max. 8. Label default = Ordnername."""
+    path = str(path)
+    label = label or Path(path).name or path
+    d = load()
+    recent = [r for r in get_recent_vaults() if r.get("path") != path]
+    recent.insert(0, {"path": path, "label": label})
+    d["recent_vaults"] = recent[:8]
+    save(d)
+
+
 def get_role(default: str = "writer") -> str:
     r = load().get("role")
     return r if r in ("writer", "reader") else default

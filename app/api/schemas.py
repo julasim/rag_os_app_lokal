@@ -122,6 +122,8 @@ class HealthResponse(BaseModel):
     version: str
     services: dict[str, bool]
     role: str = "writer"       # writer | reader — Frontend blendet z.B. den Graph-Rebuild aus
+    vault_path: str = ""       # aktiver Vault-Ordner (Firma)
+    vault_label: str = ""      # lesbarer Name (Ordner-Basename)
 
 
 # --- Wissensgraph (Track D) — Visualisierung ---

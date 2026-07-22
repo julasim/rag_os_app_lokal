@@ -50,24 +50,36 @@ def backup_vault_index() -> Path | None:
 # ---------------------------------------------------------------------------
 # appstate.sqlite-Snapshot (konsistent via SQLite-Backup-API, WAL-sicher)
 # ---------------------------------------------------------------------------
-def backup_appstate() -> Path | None:
-    s = settings()
-    src = s.appstate_db_path
+def _snapshot_sqlite(src: Path, out: Path) -> Path | None:
+    """Konsistenter SQLite-Snapshot via Backup-API (WAL-/laufende-Writes-sicher)."""
     if not src.exists():
-        log.info("backup.appstate.skip_no_db", path=str(src))
         return None
-    s.backup_dir.mkdir(parents=True, exist_ok=True)
-    out = s.backup_dir / f"appstate_{_ts()}.sqlite"
+    out.parent.mkdir(parents=True, exist_ok=True)
     src_conn = sqlite3.connect(str(src))
     dst_conn = sqlite3.connect(str(out))
     try:
-        src_conn.backup(dst_conn)   # konsistenter Snapshot trotz WAL/laufender Writes
+        src_conn.backup(dst_conn)
     finally:
         dst_conn.close()
         src_conn.close()
-    log.info("backup.appstate.done", path=str(out),
-             size_mb=round(out.stat().st_size / 1024 / 1024, 2))
     return out
+
+
+def backup_databases() -> list[Path]:
+    """Snapshot BEIDER DBs (Multi-Vault-Split): credentials.sqlite (lokal) + der
+    Vault-`state.sqlite` (Content der aktiven Firma)."""
+    s = settings()
+    ts = _ts()
+    outs: list[Path] = []
+    for name, src in (("credentials", s.credentials_db_path), ("state", s.vault_db_path)):
+        out = _snapshot_sqlite(src, s.backup_dir / f"{name}_{ts}.sqlite")
+        if out:
+            outs.append(out)
+            log.info("backup.db.done", which=name, path=str(out),
+                     size_mb=round(out.stat().st_size / 1024 / 1024, 2))
+        else:
+            log.info("backup.db.skip_no_db", which=name, path=str(src))
+    return outs
 
 
 # ---------------------------------------------------------------------------
@@ -77,7 +89,7 @@ def cleanup_old_backups() -> int:
     s = settings()
     cutoff = datetime.now(timezone.utc) - timedelta(days=s.backup_keep_days)
     removed = 0
-    for pattern in ("index_*.lance", "appstate_*.sqlite"):
+    for pattern in ("index_*.lance", "appstate_*.sqlite", "credentials_*.sqlite", "state_*.sqlite"):
         for f in s.backup_dir.glob(pattern):
             mtime = datetime.fromtimestamp(f.stat().st_mtime, tz=timezone.utc)
             if mtime < cutoff:
@@ -136,10 +148,10 @@ async def run_backup() -> dict:
         result["error"] = result["error"] or str(e)
 
     try:
-        app = await asyncio.to_thread(backup_appstate)
-        result["appstate"] = app.name if app else None
+        dbs = await asyncio.to_thread(backup_databases)
+        result["appstate"] = [p.name for p in dbs]
     except Exception as e:
-        log.warning("backup.appstate.failed", error=str(e))
+        log.warning("backup.databases.failed", error=str(e))
         result["error"] = result["error"] or str(e)
 
     try:

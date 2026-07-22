@@ -35,11 +35,14 @@ async def health():
         "lancedb": await asyncio.to_thread(_check_lancedb),
     }
     ok = all(services.values())
+    vault = settings().vault_path
     return HealthResponse(
         status="ok" if ok else "degraded",
         version=VERSION,
         services=services,
         role="reader" if settings().is_reader else "writer",
+        vault_path=str(vault),
+        vault_label=vault.name or str(vault),
     )
 
 

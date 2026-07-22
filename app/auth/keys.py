@@ -18,7 +18,7 @@ import bcrypt
 from sqlalchemy import delete, select, update
 
 from db.models import ApiKey, Scope
-from db.session import get_session
+from db.session import get_local_session
 
 _KEY_PREFIX = "rag_sk_"
 # Länge des gespeicherten Lookup-Prefix (rag_sk_ = 7 + 9 Token-Zeichen). Grenzt
@@ -52,7 +52,7 @@ async def create_api_key(
         expires_at=expires_at,
         created_by=created_by,
     )
-    async with get_session() as s:
+    async with get_local_session() as s:
         s.add(record)
         await s.flush()
         await s.refresh(record)
@@ -70,7 +70,7 @@ async def verify_api_key(plain_key: str) -> ApiKey | None:
     if not plain_key or not plain_key.startswith(_KEY_PREFIX):
         return None
 
-    async with get_session() as s:
+    async with get_local_session() as s:
         now = datetime.now(timezone.utc)
         # M2: nur Keys mit passendem Prefix (oder Bestands-Keys ohne Prefix) laden,
         # statt ALLE per bcrypt zu probieren. Der Prefix trifft normalerweise genau
@@ -97,12 +97,12 @@ async def verify_api_key(plain_key: str) -> ApiKey | None:
 # Auflisten / Widerrufen
 # ---------------------------------------------------------------------------
 async def list_api_keys() -> list[ApiKey]:
-    async with get_session() as s:
+    async with get_local_session() as s:
         result = await s.execute(select(ApiKey).order_by(ApiKey.created_at.desc()))
         return list(result.scalars().all())
 
 
 async def revoke_api_key(key_id: UUID) -> bool:
-    async with get_session() as s:
+    async with get_local_session() as s:
         result = await s.execute(delete(ApiKey).where(ApiKey.id == key_id))
         return result.rowcount > 0

@@ -13,7 +13,7 @@ from sqlalchemy import select
 
 from config import settings
 from db.models import UiUser, UserRole
-from db.session import get_session
+from db.session import get_local_session
 from logger import log
 
 _JWT_ALG = "HS256"
@@ -34,7 +34,7 @@ def hash_password(password: str) -> str:
 # Bootstrap: Admin-User anlegen, falls noch keiner existiert
 # ---------------------------------------------------------------------------
 async def ensure_admin_user() -> None:
-    async with get_session() as s:
+    async with get_local_session() as s:
         existing = await s.execute(
             select(UiUser).where(UiUser.email == settings().admin_email)
         )
@@ -60,7 +60,7 @@ async def ensure_admin_user() -> None:
 # Login
 # ---------------------------------------------------------------------------
 async def authenticate_user(email: str, password: str) -> UiUser | None:
-    async with get_session() as s:
+    async with get_local_session() as s:
         result = await s.execute(select(UiUser).where(UiUser.email == email))
         user = result.scalar_one_or_none()
         if not user:

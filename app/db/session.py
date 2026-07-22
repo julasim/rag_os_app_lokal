@@ -1,17 +1,19 @@
 """
-Async SQLAlchemy-Engine + Session-Factory (lokale Variante: SQLite/aiosqlite).
+Async SQLAlchemy — **zwei** SQLite-DBs (Multi-Vault-Split):
 
-Die lokale App-DB (`appstate.sqlite`) hält Keys/Users/Query-Log/Job-Status —
-NIE im Vault. Korpus/Chunks/Graph wandern in M3 nach LanceDB.
+  * LOKAL  `credentials.sqlite`  — `ui_users` + `api_keys`  → `get_local_session()`
+  * VAULT  `<vault>/.ragos/state.sqlite` — Content (Dokumente/Chunks/Graph/Logs/Jobs)
+           → `get_session()` (unverändert für die meisten Aufrufer)
 
-Verwendung:
-    async with get_session() as session:
-        result = await session.execute(...)
+Warum getrennt: Credentials bleiben lokal pro Rechner (nie auf NAS), der Content lebt
+im Vault, damit eine Firma = ein portabler Ordner ist. Siehe Plan „Multi-Vault".
 
-`init_db()` legt das Schema an (idempotent, `create_all`) + bootstrappt den Admin.
+`init_db()` legt beide Schemata an (idempotent), migriert eine ggf. vorhandene alte
+Einzel-`appstate.sqlite` (db/migrate.py) und bootstrappt den Admin (lokal).
 """
 from __future__ import annotations
 
+import asyncio
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 
@@ -28,35 +30,33 @@ from logger import log
 
 # NullPool: SQLite ist single-writer; ein Verbindungspool bringt keinen Vorteil
 # und provoziert nur „database is locked". Jede Session öffnet frisch.
-_engine = create_async_engine(
-    settings().appstate_db_url,
-    echo=False,
-    poolclass=NullPool,
-)
+_local_engine = create_async_engine(settings().credentials_db_url, echo=False, poolclass=NullPool)
+_vault_engine = create_async_engine(settings().vault_db_url, echo=False, poolclass=NullPool)
 
 
-# SQLite-Härtung pro Verbindung: WAL (nebenläufige Leser), busy_timeout gegen
-# transiente Locks, foreign_keys=ON (sonst greifen ON DELETE CASCADE/SET NULL nicht).
-@event.listens_for(_engine.sync_engine, "connect")
-def _sqlite_pragmas(dbapi_conn, _record) -> None:  # noqa: ANN001
-    cur = dbapi_conn.cursor()
-    cur.execute("PRAGMA journal_mode=WAL")
-    cur.execute("PRAGMA busy_timeout=5000")
-    cur.execute("PRAGMA foreign_keys=ON")
-    cur.close()
+def _pragma(journal_mode: str):
+    """SQLite-Härtung pro Verbindung. `journal_mode` je Engine unterschiedlich:
+    lokal WAL (nebenläufige Leser), Vault DELETE (WAL über SMB/Netzlaufwerk ist
+    unzuverlässig; der Vault-Schreiber ist Single-Writer)."""
+    def _apply(dbapi_conn, _record) -> None:  # noqa: ANN001
+        cur = dbapi_conn.cursor()
+        cur.execute(f"PRAGMA journal_mode={journal_mode}")
+        cur.execute("PRAGMA busy_timeout=5000")
+        cur.execute("PRAGMA foreign_keys=ON")
+        cur.close()
+    return _apply
 
 
-_session_factory = async_sessionmaker(
-    bind=_engine,
-    expire_on_commit=False,
-    class_=AsyncSession,
-)
+event.listens_for(_local_engine.sync_engine, "connect")(_pragma("WAL"))
+event.listens_for(_vault_engine.sync_engine, "connect")(_pragma("DELETE"))
+
+_local_factory = async_sessionmaker(bind=_local_engine, expire_on_commit=False, class_=AsyncSession)
+_vault_factory = async_sessionmaker(bind=_vault_engine, expire_on_commit=False, class_=AsyncSession)
 
 
 @asynccontextmanager
-async def get_session() -> AsyncGenerator[AsyncSession, None]:
-    """Async-Context-Manager für eine DB-Session."""
-    session = _session_factory()
+async def _wrap(factory) -> AsyncGenerator[AsyncSession, None]:
+    session = factory()
     try:
         yield session
         await session.commit()
@@ -67,22 +67,42 @@ async def get_session() -> AsyncGenerator[AsyncSession, None]:
         await session.close()
 
 
+@asynccontextmanager
+async def get_session() -> AsyncGenerator[AsyncSession, None]:
+    """Vault-DB (Content: Dokumente/Chunks/Graph/Logs/Jobs). Der Default für fast alles."""
+    async with _wrap(_vault_factory) as s:
+        yield s
+
+
+@asynccontextmanager
+async def get_local_session() -> AsyncGenerator[AsyncSession, None]:
+    """Lokale Credentials-DB (nur `ui_users` + `api_keys`). Für Auth-Code."""
+    async with _wrap(_local_factory) as s:
+        yield s
+
+
 async def init_db() -> None:
-    """Schema anlegen (idempotent) + Admin-User sicherstellen.
+    """Beide Schemata anlegen (idempotent), Alt-appstate migrieren, Admin bootstrappen.
 
-    Lokale Variante: reines `create_all` (Zielschema). Die früheren Postgres-
-    DO-Block-Migrationen, `pgcrypto` und GIN-Indizes entfallen — SQLite legt das
-    volle Schema direkt aus den Modellen an.
-    """
-    from db.models import Base  # zirkuläre Imports vermeiden
+    Reihenfolge kritisch: create_all → **Migration** (importiert Alt-Nutzer/Keys +
+    Content) → **erst dann** `ensure_admin_user` (sonst UNIQUE-Konflikt auf die
+    migrierte Admin-Email). Der Leser legt die Vault-DB NICHT an (er liest die vom
+    Sync gezogene Cache-Kopie)."""
+    from db.models import Base, LocalBase  # zirkuläre Imports vermeiden
 
-    log.info("db.init.start", db=settings().appstate_db_url)
-    settings().appstate_db_path.parent.mkdir(parents=True, exist_ok=True)
+    log.info("db.init.start", local=settings().credentials_db_url, vault=settings().vault_db_url)
+    settings().credentials_db_path.parent.mkdir(parents=True, exist_ok=True)
+    settings().vault_db_path.parent.mkdir(parents=True, exist_ok=True)
 
-    async with _engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
+    async with _local_engine.begin() as conn:
+        await conn.run_sync(LocalBase.metadata.create_all)
+    if not settings().is_reader:
+        async with _vault_engine.begin() as conn:
+            await conn.run_sync(Base.metadata.create_all)
 
-    # Admin-User bootstrappen
+    from db.migrate import run_migration_if_needed
+    await asyncio.to_thread(run_migration_if_needed)
+
     from auth.users import ensure_admin_user
     await ensure_admin_user()
 
@@ -90,4 +110,5 @@ async def init_db() -> None:
 
 
 async def dispose() -> None:
-    await _engine.dispose()
+    await _local_engine.dispose()
+    await _vault_engine.dispose()

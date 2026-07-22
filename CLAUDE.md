@@ -20,8 +20,11 @@ Sie enthält das, was beim Code-Lesen *nicht* offensichtlich ist.
 > - **Ein Prozess, kein Docker.** FastAPI + MCP unter `uvicorn` @127.0.0.1, in einer
 >   **pywebview/WebView2-Shell** (`app/desktop.py`, Tray/Autostart/Toast).
 > - **LanceDB = EINZIGER Wissensspeicher** (`app/pipelines/store.py`, im Vault) —
->   ersetzt Qdrant **und** die Postgres-Korpus-Tabellen. Dazu ein kleines lokales
->   **`appstate.sqlite`** (Keys/Users/Log, NICHT im Vault).
+>   ersetzt Qdrant **und** die Postgres-Korpus-Tabellen.
+> - **Zwei SQLite-DBs (Multi-Vault, 2026-07-22):** `credentials.sqlite` (Keys/Nutzer,
+>   **lokal** pro Rechner, maschinenweit über alle Firmen) + `<vault>/.ragos/state.sqlite`
+>   (Dokumente/Chunks/Graph/Logs/Jobs, **im Vault** → Firma = ein portabler Ordner).
+>   `get_session()` = Vault, `get_local_session()` = Credentials. Split-Details: §4.
 > - **Embeddings: INT8-ONNX `intfloat/multilingual-e5-large`** (1024-dim, mehrsprachig;
 >   **nicht** bge-m3), direkt über onnxruntime (`factory.py`, Mean-Pooling + e5-Query/
 >   Passage-Präfixe) — **kein fastembed mehr**; INT8 ~3,2× schneller/4× kleiner (M8g).
@@ -180,6 +183,21 @@ SQLite ([app/db/models.py](app/db/models.py)) ist Single-Source-of-Truth für
 "was haben wir?", LanceDB für "wo steht es?". Driften die zwei auseinander
 (Doc in SQLite, kein Chunk in LanceDB) → Bug, nicht Feature.
 
+**Zwei-DB-Split (Multi-Vault, 2026-07-22).** SQLite ist auf **zwei** Dateien mit
+**zwei** `DeclarativeBase` verteilt ([models.py](app/db/models.py) `LocalBase` vs. `Base`):
+- **`credentials.sqlite`** (lokal, `%LOCALAPPDATA%`): `ui_users` + `api_keys`. Nie im
+  Vault/NAS, maschinenweit über **alle** Firmen-Vaults geteilt. Zugriff: `get_local_session()`.
+- **`<vault>/.ragos/state.sqlite`** (im Vault): aller Content (documents/chunks/graph/logs/
+  jobs). Reist mit dem Vault → Firma = ein portabler, selbst-beschreibender Ordner. Zugriff:
+  `get_session()` (Default, unverändert für fast alles).
+
+Regeln: **neuen Keys/Nutzer-Code auf `get_local_session()`**, alles andere `get_session()`.
+**Keine DB-übergreifenden FKs** (documents.uploaded_by / query_log.api_key_id/user_id sind
+reine Audit-UUIDs). Vault-DB nutzt **Rollback-Journal statt WAL** (SMB-tauglich, Single-Writer).
+Vault-Wechsel: Tray „Vault (Firma)" → Neustart. Einmal-Migration Alt-`appstate.sqlite` →
+Split in [db/migrate.py](app/db/migrate.py) (idempotent, Alt-DB → `.migrated`). Reader: liest
+`state.sqlite` aus dem lokalen Cache (Phase 2, noch offen).
+
 **Altlasten (2026-07-11 gelöscht):** `config/projects.yml`,
 `config/project_defaults.yml` und `scripts/migrate-projects-to-db.py` aus der
 Projekt-Ära sind entfernt, ebenso der vestigiale `project`-Form-Parameter an den
@@ -212,8 +230,9 @@ zur Suche fehlt bewusst (retrieve-only).
 **Nativ, kein Docker.** venv anlegen, `pip install -e app[writer,dev]`
 (Python 3.14), dann `python app/desktop.py` (Shell) oder `uvicorn main:app`
 aus `app/`. Konfiguration über `app-settings.json` bzw. Env (`RAG_VAULT_PATH`,
-`RAG_SERVICE_ROLE`). SQLite (`%LOCALAPPDATA%\RAG-OS\appstate.sqlite`) + LanceDB
-(im Vault) — **keine DB-Server**.
+`RAG_SERVICE_ROLE`). Zwei SQLite-DBs — `%LOCALAPPDATA%\RAG-OS\credentials.sqlite`
+(Keys/Nutzer, lokal) + `<vault>/.ragos/state.sqlite` (Content, im Vault; §4) — plus
+LanceDB (im Vault). **Keine DB-Server.**
 
 - Python-Edit → App neu starten (bzw. uvicorn-Reload).
 - Frontend-Edit ([app/frontend/src](app/frontend/src)) → `npm run dev` (Vite) / `npm run build`.

@@ -29,7 +29,13 @@ from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
 
 class Base(DeclarativeBase):
-    pass
+    """Vault-Tabellen (Content): Dokumente/Chunks/Graph/Logs/Jobs → `<vault>/.ragos/state.sqlite`."""
+
+
+class LocalBase(DeclarativeBase):
+    """Lokale Tabellen (Credentials): `ui_users` + `api_keys` → `credentials.sqlite`.
+    Bleiben pro Rechner (nie im Vault/NAS), maschinenweit über alle Firmen-Vaults geteilt.
+    Getrennte Base → getrennte `create_all` je Engine (Multi-Vault-Split)."""
 
 
 # ---------------------------------------------------------------------------
@@ -57,7 +63,7 @@ class Scope(str, enum.Enum):
 # ---------------------------------------------------------------------------
 # UI-Benutzer (Admin-Website)
 # ---------------------------------------------------------------------------
-class UiUser(Base):
+class UiUser(LocalBase):
     __tablename__ = "ui_users"
 
     id: Mapped[uuid.UUID] = mapped_column(
@@ -95,7 +101,7 @@ class UiUser(Base):
 # ---------------------------------------------------------------------------
 # API-Keys (MCP/REST-Clients)
 # ---------------------------------------------------------------------------
-class ApiKey(Base):
+class ApiKey(LocalBase):
     __tablename__ = "api_keys"
 
     id: Mapped[uuid.UUID] = mapped_column(
@@ -150,9 +156,9 @@ class Document(Base):
         DateTime(timezone=True), server_default=func.now()
     )
     indexed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
-    uploaded_by: Mapped[uuid.UUID | None] = mapped_column(
-        Uuid, ForeignKey("ui_users.id", ondelete="SET NULL")
-    )
+    # War FK -> ui_users.id; nach Multi-Vault-Split liegt ui_users in einer ANDEREN DB
+    # (credentials.sqlite lokal) -> keine DB-uebergreifende FK moeglich. Reine Audit-UUID.
+    uploaded_by: Mapped[uuid.UUID | None] = mapped_column(Uuid, nullable=True)
 
     # --- Strukturierte Metadaten (beim Ingest via LLM extrahiert, alle optional) ---
     # Für gefilterte Suche + vertrauenswürdige Zitate im Norm-/Standard-Kontext.
@@ -282,9 +288,8 @@ class IngestQueueEntry(Base):
     )
     started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
-    uploaded_by: Mapped[uuid.UUID | None] = mapped_column(
-        Uuid, ForeignKey("ui_users.id", ondelete="SET NULL")
-    )
+    # War FK -> ui_users.id; DB-uebergreifend nach Split -> reine Audit-UUID.
+    uploaded_by: Mapped[uuid.UUID | None] = mapped_column(Uuid, nullable=True)
 
     __table_args__ = (
         Index("idx_ingest_queue_pickup", "status", "created_at"),
@@ -383,14 +388,12 @@ class QueryLog(Base):
     id: Mapped[uuid.UUID] = mapped_column(
         Uuid, primary_key=True, default=uuid.uuid4
     )
-    api_key_id: Mapped[uuid.UUID | None] = mapped_column(
-        Uuid, ForeignKey("api_keys.id", ondelete="SET NULL")
-    )
-    # OAuth-/UI-User-Attribution (Track E): bei OAuth-Principals ist api_key_id
-    # None (id=None-Duck-Typing) → user_id trägt die Identität für Audit/Budget.
-    user_id: Mapped[uuid.UUID | None] = mapped_column(
-        Uuid, ForeignKey("ui_users.id", ondelete="SET NULL")
-    )
+    # War FK -> api_keys.id; api_keys liegt nach Split in credentials.sqlite (lokal)
+    # -> DB-uebergreifend, reine Audit-UUID.
+    api_key_id: Mapped[uuid.UUID | None] = mapped_column(Uuid, nullable=True)
+    # UI-User-Attribution (Track E). War FK -> ui_users.id; nach Split DB-uebergreifend
+    # (ui_users in credentials.sqlite) -> reine Audit-UUID.
+    user_id: Mapped[uuid.UUID | None] = mapped_column(Uuid, nullable=True)
     query_text: Mapped[str] = mapped_column(Text, nullable=False)
     # SQLite: als JSON-Liste von doc_id-STRINGS (query.py stringifiziert vor dem Write).
     retrieved_doc_ids: Mapped[list[str]] = mapped_column(JSON, default=list)

@@ -21,7 +21,7 @@ from auth.dependencies import AuthContext, require_ui_admin
 from auth.folders import normalize_folder
 from auth.users import hash_password
 from db.models import UiUser, UserRole
-from db.session import get_session
+from db.session import get_local_session
 from logger import log
 
 router = APIRouter(prefix="/api/users", tags=["users"])
@@ -94,7 +94,7 @@ async def _admin_count(s) -> int:
 # ---------------------------------------------------------------------------
 @router.get("", response_model=list[UserAdminResponse])
 async def list_users(_: AuthContext = Depends(require_ui_admin)):
-    async with get_session() as s:
+    async with get_local_session() as s:
         rows = (await s.execute(select(UiUser).order_by(UiUser.created_at))).scalars().all()
     return [_to_resp(u) for u in rows]
 
@@ -105,7 +105,7 @@ async def create_user(payload: UserCreateRequest, _: AuthContext = Depends(requi
         raise HTTPException(status.HTTP_400_BAD_REQUEST, f"Ungültige Rolle: {payload.role}")
     email = payload.email.strip().lower()
     access_all, folders = _resolve_acl(payload.access_all, payload.allowed_folders)
-    async with get_session() as s:
+    async with get_local_session() as s:
         exists = await s.scalar(select(UiUser.id).where(func.lower(UiUser.email) == email))
         if exists:
             raise HTTPException(status.HTTP_409_CONFLICT, "E-Mail bereits vergeben")
@@ -130,7 +130,7 @@ async def update_user(
 ):
     if payload.role is not None and payload.role not in _ROLES:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, f"Ungültige Rolle: {payload.role}")
-    async with get_session() as s:
+    async with get_local_session() as s:
         u = (await s.execute(select(UiUser).where(UiUser.id == user_id))).scalar_one_or_none()
         if not u:
             raise HTTPException(status.HTTP_404_NOT_FOUND, "User nicht gefunden")
@@ -164,7 +164,7 @@ async def update_user(
 async def delete_user(user_id: UUID, ctx: AuthContext = Depends(require_ui_admin)):
     if ctx.ui_user and ctx.ui_user.id == user_id:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "Man kann sich nicht selbst löschen")
-    async with get_session() as s:
+    async with get_local_session() as s:
         u = (await s.execute(select(UiUser).where(UiUser.id == user_id))).scalar_one_or_none()
         if not u:
             raise HTTPException(status.HTTP_404_NOT_FOUND, "User nicht gefunden")

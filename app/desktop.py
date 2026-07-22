@@ -66,6 +66,7 @@ def _resolve_vault_and_role(default_role: str) -> tuple[str, str]:
         appsettings.set_vault_path(chosen)
         appsettings.set_role(role)
         vault = chosen
+    appsettings.add_recent_vault(vault)  # aktueller Vault immer in der Schnellwechsel-Liste
     return vault, role
 
 
@@ -264,10 +265,27 @@ class Shell:
     def _build_tray(self):
         import pystray
 
+        def _vault_submenu():
+            # Dynamisch (Callable-Menu): letzte Vaults zum Schnellwechsel je Firma.
+            current = appsettings.get_vault_path()
+            items = []
+            for r in appsettings.get_recent_vaults():
+                path, label = r["path"], r.get("label") or r["path"]
+                is_current = path == current
+                items.append(pystray.MenuItem(
+                    ("● " if is_current else "") + label,
+                    lambda icon, item, p=path: self.switch_to_vault(p),
+                    enabled=not is_current,
+                ))
+            if items:
+                items.append(pystray.Menu.SEPARATOR)
+            items.append(pystray.MenuItem("Anderen Ordner wählen…", lambda: self.switch_vault()))
+            return pystray.Menu(*items)
+
         def _menu():
             return pystray.Menu(
                 pystray.MenuItem("Öffnen", lambda: self.show(), default=True),
-                pystray.MenuItem("Vault wechseln…", lambda: self.switch_vault()),
+                pystray.MenuItem("Vault (Firma)", _vault_submenu()),
                 pystray.MenuItem(
                     "Autostart",
                     lambda icon, item: set_autostart(not autostart_enabled()),
@@ -285,10 +303,20 @@ class Shell:
             except Exception:
                 pass
 
+    def switch_to_vault(self, path: str) -> None:
+        """Schnellwechsel auf einen bekannten Vault (Firma) → speichern + Neustart."""
+        if not path or path == appsettings.get_vault_path():
+            return
+        appsettings.set_vault_path(path)
+        appsettings.add_recent_vault(path)
+        toast(APP_TITLE, "Vault gewechselt — RAG-OS startet neu…")
+        self._restart()
+
     def switch_vault(self) -> None:
         chosen = _ask_vault_folder()
         if chosen:
             appsettings.set_vault_path(chosen)
+            appsettings.add_recent_vault(chosen)
             toast(APP_TITLE, "Vault gewechselt — RAG-OS startet neu…")
             self._restart()
 

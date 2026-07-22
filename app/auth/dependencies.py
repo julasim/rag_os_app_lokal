@@ -17,7 +17,7 @@ from auth.keys import verify_api_key
 from auth.users import decode_session_token
 from config import settings
 from db.models import ApiKey, UiUser, UserRole
-from db.session import get_session
+from db.session import get_local_session
 
 
 async def _local_admin() -> UiUser | None:
@@ -25,7 +25,7 @@ async def _local_admin() -> UiUser | None:
     fallen auf den lokalen Admin zurück. None, wenn deaktiviert oder kein Admin."""
     if not settings().local_ui_autologin:
         return None
-    async with get_session() as s:
+    async with get_local_session() as s:
         return (
             await s.execute(
                 select(UiUser)
@@ -119,7 +119,7 @@ async def require_ui_user(
     if not payload:
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Invalid session")
 
-    async with get_session() as s:
+    async with get_local_session() as s:
         result = await s.execute(select(UiUser).where(UiUser.id == payload["sub"]))
         user = result.scalar_one_or_none()
         if not user:
@@ -155,7 +155,7 @@ async def require_any_auth(
     if ui_token:
         payload = decode_session_token(ui_token)
         if payload:
-            async with get_session() as s:
+            async with get_local_session() as s:
                 result = await s.execute(
                     select(UiUser).where(UiUser.id == payload["sub"])
                 )
