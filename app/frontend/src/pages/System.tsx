@@ -99,7 +99,7 @@ function McpConnectCard({ vaultLabel }: { vaultLabel?: string }) {
   const mcpUrl = window.location.origin + '/mcp';
   const cfg = {
     mcpServers: {
-      'sima-rag': {
+      'SAZTG RAG_OS': {
         command: 'cmd',
         args: ['/c', 'npx', '-y', 'mcp-remote', mcpUrl, '--header', 'Authorization:${AUTH}'],
         env: { AUTH: 'Bearer DEIN_RAG_SK_KEY' },

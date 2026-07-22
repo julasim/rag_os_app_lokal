@@ -89,7 +89,7 @@ def build_mcp_app() -> FastMCP:
     # stateless_http=True: jeder POST bekommt einen eigenen frischen Transport
     # und gibt eine synchrone JSON-Antwort zurück — kein SSE-Session-Handshake
     # nötig. Claude.ai und andere MCP-Clients unterstützen diesen Modus explizit.
-    mcp = FastMCP("sima-rag", stateless_http=True, json_response=True)
+    mcp = FastMCP("SAZTG RAG_OS", stateless_http=True, json_response=True)
 
     # --- rag_retrieve --------------------------------------------------------
     @mcp.tool(annotations={"readOnlyHint": True, "openWorldHint": False})
