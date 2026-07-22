@@ -209,6 +209,44 @@ def _load_icon_image():
 class Api:
     """Von der Seite über `window.pywebview.api.*` aufrufbar."""
 
+    def __init__(self, shell: "Shell | None" = None) -> None:
+        self._shell = shell
+
+    # --- Vault (Firma) aus der Web-UI wechseln ---------------------------------
+    def list_vaults(self) -> dict:
+        """Aktueller Vault + zuletzt genutzte Firmen (für die In-App-Auswahl)."""
+        return {
+            "current": appsettings.get_vault_path(),
+            "recent": appsettings.get_recent_vaults(),
+        }
+
+    def switch_vault(self, path: str | None = None) -> dict:
+        """Firma wechseln und App neu starten. `path=None` → nativer Ordner-Picker.
+        Rückgabe geht noch an die Seite raus; der Neustart folgt kurz verzögert."""
+        if not path:
+            path = self._pick_folder()
+            if not path:
+                return {"ok": False, "cancelled": True}
+        if path == appsettings.get_vault_path():
+            return {"ok": False, "same": True}
+        appsettings.set_vault_path(path)
+        appsettings.add_recent_vault(path)
+        if self._shell is not None:
+            import threading
+            threading.Timer(0.5, self._shell._restart).start()
+        return {"ok": True, "path": path}
+
+    def _pick_folder(self) -> str | None:
+        try:
+            import webview
+            win = self._shell.window if self._shell else None
+            res = win.create_file_dialog(webview.FOLDER_DIALOG) if win else None
+            if res:
+                return res[0] if isinstance(res, (list, tuple)) else str(res)
+        except Exception:
+            pass
+        return None
+
     def ingest_paths(self, paths: list[str]) -> dict:
         """Kopiert fallengelassene Dateien in den Überwachungsordner → Watcher/Queue
         nehmen sie auf (nur Writer). Reiner Datei-Kopiervorgang, kein Ingest hier."""
@@ -361,7 +399,7 @@ class Shell:
             APP_TITLE,
             f"http://127.0.0.1:{port}/",
             width=1280, height=860, min_size=(900, 600),
-            js_api=Api(),
+            js_api=Api(self),
             hidden=self.start_hidden,
         )
 
