@@ -51,6 +51,7 @@ export default function Graph() {
   const [colorMode, setColorMode] = useState<'type' | 'community'>('type');
   const [hiddenTypes, setHiddenTypes] = useState<Set<string>>(new Set());
   const [search, setSearch] = useState('');
+  const [nodeScale, setNodeScale] = useState(3);   // Knotengröße (nodeRelSize), per Slider
 
   const { data, isLoading, error } = useQuery<GraphData>({
     queryKey: ['graph'],
@@ -204,6 +205,15 @@ export default function Graph() {
           Farbe: {colorMode === 'type' ? 'Typ' : 'Community'}
         </button>
 
+        <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: '#525252' }}>
+          Knotengröße
+          <input
+            type="range" min={1} max={8} step={0.5} value={nodeScale}
+            onChange={(e) => setNodeScale(Number(e.target.value))}
+            style={{ width: 96 }}
+          />
+        </label>
+
         <div style={{ marginLeft: 'auto', display: 'flex', gap: 10, alignItems: 'center' }}>
           <span style={{ fontSize: 12, color: '#a3a3a3' }}>
             {data?.stats.truncated
@@ -249,7 +259,8 @@ export default function Graph() {
               graphData={graphData}
               nodeId="id"
               nodeLabel={(n: any) => `${n.label} · ${TYPE_LABELS[n.type] || n.type}`}
-              nodeVal={(n: any) => 0.6 + (n.pagerank || 0) * 320}
+              nodeVal={(n: any) => 0.4 + (n.pagerank || 0) * 30}
+              nodeRelSize={nodeScale}
               nodeColor={colorOf}
               nodeVisibility={(n: any) => !hiddenTypes.has(n.type)}
               linkVisibility={(l: any) => {
@@ -258,8 +269,6 @@ export default function Graph() {
               }}
               linkColor={linkColorOf}
               linkWidth={(l: any) => (selectedId && (endId(l.source) === selectedId || endId(l.target) === selectedId) ? 1.6 : 0.4)}
-              linkDirectionalArrowLength={(l: any) => (l.relation === 'references' || l.relation === 'supersedes' ? 3 : 0)}
-              linkDirectionalArrowRelPos={1}
               onNodeClick={(n: any) => focus(n.id)}
               onNodeHover={(n: any) => setHoverId(n ? n.id : null)}
               onBackgroundClick={() => setSelectedId(null)}
