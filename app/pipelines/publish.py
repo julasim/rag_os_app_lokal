@@ -96,9 +96,28 @@ def refresh_reader_cache() -> str:
     return path
 
 
+def _sync_state_db() -> None:
+    """Content-DB `state.sqlite` (im Vault) in den lokalen Reader-Cache ziehen — der
+    Leser liest Dokumente/Graph/Logs lokal, nie live über SMB. Rollback-Journal (kein
+    WAL) → eine Datei genügt. No-op, wenn Quelle==Ziel (Schreiber) oder Quelle fehlt."""
+    src = settings().ragos_dir / "state.sqlite"   # im Vault (vom Schreiber erzeugt)
+    dst = settings().vault_db_path                 # Reader: lokaler Cache-Pfad
+    if not src.exists() or src.resolve() == dst.resolve():
+        return
+    dst.parent.mkdir(parents=True, exist_ok=True)
+    tmp = dst.with_name(dst.name + ".tmp")
+    shutil.copy2(src, tmp)
+    try:
+        os.replace(tmp, dst)   # atomarer Swap
+        log.info("publish.reader_state_synced", dst=str(dst))
+    except OSError as e:  # noqa: BLE001 — Windows: Ziel evtl. offen → nächster Zyklus
+        tmp.unlink(missing_ok=True)
+        log.warning("publish.reader_state_sync_deferred", error=str(e)[:160])
+
+
 def sync_reader_cache() -> str:
-    """Leser: kopiert das (getaggte) Vault-Dataset in den lokalen Cache und gibt den
-    Cache-Pfad zurück. SMB nur Transport; Live-Query läuft NIE über SMB.
+    """Leser: kopiert das (getaggte) Vault-Dataset **und** `state.sqlite` in den lokalen
+    Cache und gibt den Cache-Pfad zurück. SMB nur Transport; Live-Query läuft NIE über SMB.
 
     Kopie in ein `.tmp`, dann rename-Swap (kurzes Fenster ohne Ziel — der Leser
     retryt). Kein Rebuild der Indizes nötig (M0-Spike belegt: Kopie → read-only
@@ -118,5 +137,6 @@ def sync_reader_cache() -> str:
     os.replace(tmp, dst)
     if old.exists():
         shutil.rmtree(old, ignore_errors=True)
+    _sync_state_db()   # Content-DB mitziehen (Multi-Vault, Phase 2)
     log.info("publish.reader_cache_synced", cache=str(dst))
     return str(dst)
