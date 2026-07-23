@@ -27,9 +27,9 @@ const config: Config = {
         'danger-dot': '#ef4444',
       },
       fontFamily: {
-        // Helvetica zuerst (SIMA-Corporate-Design), rein lokal — kein Web-Font-Download.
-        // Windows substituiert Helvetica durch Arial (metrisch identisch).
-        sans: ['"Helvetica Neue"', 'Helvetica', 'Arial', 'sans-serif'],
+        // Arimo = mitgebuendelte, metrisch Helvetica/Arial-kompatible Schrift (Apache-2.0),
+        // lokal als WOFF2 -> kein Web-Font-Download. Helvetica/Arial als Fallback.
+        sans: ['Arimo', '"Helvetica Neue"', 'Helvetica', 'Arial', 'sans-serif'],
         mono: ['ui-monospace', '"SF Mono"', '"JetBrains Mono"', 'monospace'],
       },
       borderRadius: {

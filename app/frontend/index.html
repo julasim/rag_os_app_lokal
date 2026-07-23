@@ -5,8 +5,9 @@
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>RAG OS</title>
-    <!-- Bewusst KEINE externen Fonts (kein Google Fonts): die App laedt nichts aus
-         dem Netz. Schrift = lokaler System-Stack (Helvetica/Arial), siehe index.css. -->
+    <!-- Bewusst KEINE externen Fonts (kein Google Fonts): die App laedt nichts aus dem
+         Netz. Schrift = Arimo, lokal als WOFF2 mitgebuendelt (metrisch Helvetica/Arial-
+         kompatibel), siehe src/index.css. Zusaetzlich blockt eine CSP externe Requests. -->
   </head>
   <body>
     <div id="root"></div>

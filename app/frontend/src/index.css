@@ -1,10 +1,20 @@
+/* Lokale Schrift: Arimo ist metrisch kompatibel zu Helvetica/Arial (Apache-2.0) und
+   wird als WOFF2 MITGEBUENDELT — kein Web-Font-Download, identische Darstellung auf
+   jedem Rechner. Echte Helvetica darf nicht mitgeliefert werden (kommerzielle Lizenz);
+   sie bleibt als Fallback im Stack, falls lokal vorhanden (z.B. macOS). */
+/* Nur Latin-Subset (deckt Umlaute/ß ab) — spart ~450 KB gegenueber allen Subsets;
+   exotische Zeichen fallen sauber auf Arial/Helvetica zurueck. */
+@import '@fontsource/arimo/latin-400.css';
+@import '@fontsource/arimo/latin-500.css';
+@import '@fontsource/arimo/latin-600.css';
+@import '@fontsource/arimo/latin-700.css';
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
 body {
-  /* Helvetica (SIMA-CD), rein lokal — keine externen Web-Fonts. */
-  font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
+  font-family: Arimo, "Helvetica Neue", Helvetica, Arial, sans-serif;
   background: #fafafa;
   color: #111111;
   margin: 0;

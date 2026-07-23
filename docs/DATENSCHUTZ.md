@@ -27,7 +27,13 @@
   Rechners (der bekannte Google-Fonts-Fall). **Behoben:** Links entfernt, Schrift auf einen
   **lokalen System-Stack** umgestellt (`"Helvetica Neue", Helvetica, Arial`); verifiziert,
   dass im gebauten Frontend keine `googleapis`/`gstatic`-Referenz mehr steckt.
-  **Rest-Risiko:** es gibt (noch) **keine CSP**, die künftige externe Requests hart blockt.
+  Die Schrift wird seither **lokal mitgeliefert** (Arimo, Latin-Subset, Apache-2.0 —
+  metrisch Helvetica/Arial-kompatibel; echte Helvetica ist kommerziell lizenziert und
+  wird bewusst nicht mitgeliefert).
+- **CSP (Content-Security-Policy).** `default-src 'self'`, `script-src 'self'`,
+  `connect-src 'self'` (+ `nosniff`, `no-referrer`) — extern eingebundene Assets werden
+  vom Browser **hart blockiert** statt still geladen. Damit ist „die UI lädt nichts aus
+  dem Netz" nicht nur Konvention, sondern erzwungen.
 - **Zugriffskontrolle:** kanonische, serverseitig erzwungene Ordner-ACL
   ([auth/folders.py](../app/auth/folders.py)), per-User, segmentgrenzbewusst, IDOR-fest;
   Löschen nur Web-UI-Admin. Wissensgraph-Anzeige ebenfalls per-User ACL-gefiltert (§13).

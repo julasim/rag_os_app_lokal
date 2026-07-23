@@ -421,5 +421,54 @@ class _MCPRouter:
         await self._fastapi(scope, receive, send)
 
 
+# ---------------------------------------------------------------------------
+# Security-Header / CSP
+# ---------------------------------------------------------------------------
+# Die UI lädt bewusst NICHTS aus dem Netz (Schrift ist lokal gebündelt). Die CSP
+# macht das hart durchsetzbar: ein versehentlich eingebautes externes Asset (Font,
+# CDN-Script, Tracking-Pixel) wird vom Browser blockiert statt still zu laden.
+#   - script-src 'self'  → kein Inline-Script nötig (Vite baut nur externe Bundles,
+#     verifiziert), also keine 'unsafe-inline'-Aufweichung beim kritischsten Direktiv.
+#   - style-src erlaubt 'unsafe-inline' (React setzt Inline-Styles; deutlich harmloser).
+#   - connect-src 'self' → XHR/fetch nur zur eigenen App.
+_CSP = (
+    "default-src 'self'; "
+    "base-uri 'self'; "
+    "object-src 'none'; "
+    "frame-ancestors 'none'; "
+    "img-src 'self' data: blob:; "
+    "font-src 'self' data:; "
+    "style-src 'self' 'unsafe-inline'; "
+    "script-src 'self'; "
+    "connect-src 'self'; "
+    "worker-src 'self' blob:"
+)
+
+
+class _SecurityHeaders:
+    """Setzt CSP + kleine Security-Header. **Pure ASGI** (kein BaseHTTPMiddleware),
+    damit Streaming-/SSE-Antworten nicht gepuffert werden."""
+
+    def __init__(self, app: ASGIApp, csp: str) -> None:
+        self._app = app
+        self._csp = csp.encode()
+
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        if scope["type"] != "http":
+            await self._app(scope, receive, send)
+            return
+
+        async def _send(message):
+            if message["type"] == "http.response.start":
+                headers = list(message.get("headers") or [])
+                headers.append((b"content-security-policy", self._csp))
+                headers.append((b"x-content-type-options", b"nosniff"))
+                headers.append((b"referrer-policy", b"no-referrer"))
+                message = {**message, "headers": headers}
+            await send(message)
+
+        await self._app(scope, receive, _send)
+
+
 # `app` = Entry-Point für uvicorn (main:app)
-app = _MCPRouter(_fastapi, _mcp_stack)
+app = _SecurityHeaders(_MCPRouter(_fastapi, _mcp_stack), _CSP)

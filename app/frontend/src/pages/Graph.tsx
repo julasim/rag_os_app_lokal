@@ -277,7 +277,7 @@ export default function Graph() {
                 const show = node.id === selectedId || node.id === hoverId || neighborIds.has(node.id) || scale > 2.6;
                 if (!show) return;
                 const fs = Math.max(3, 11 / scale);
-                ctx.font = `${fs}px "Helvetica Neue", Helvetica, Arial, sans-serif`;
+                ctx.font = `${fs}px Arimo, "Helvetica Neue", Helvetica, Arial, sans-serif`;
                 ctx.textAlign = 'center';
                 ctx.fillStyle = '#111';
                 const t = node.label.length > 30 ? node.label.slice(0, 29) + '…' : node.label;

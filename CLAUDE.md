@@ -357,9 +357,14 @@ Keys, System, Wartung); **keine** Suchseite mehr (Suche läuft über MCP, §5).
 > Windows substituiert Arial, metrisch identisch). **Kein Web-Font-Download mehr** —
 > verifiziert: keine `googleapis`/`gstatic`-Referenz mehr in Quellcode **und** gebautem
 > `dist/`. Echte Helvetica wird bewusst **nicht** mitgeliefert (kommerzielle Lizenz).
-> **Weiterhin offen:** es gibt **keine** CSP (`Content-Security-Policy`-Header), die
-> künftige externe Requests hart blocken würde — beim Hinzufügen von Frontend-Assets
-> also aufpassen.
+> **Zusätzlich (2026-07-22):** Schrift ist jetzt **lokal mitgebündelt** — `@fontsource/arimo`
+> (Latin-Subset, 4 WOFF2 ≈ 48 KB, Apache-2.0; metrisch Helvetica/Arial-kompatibel), Stack
+> `Arimo, "Helvetica Neue", Helvetica, Arial`. Und es gibt jetzt eine **CSP**
+> ([main.py](app/main.py) `_SecurityHeaders`, pure-ASGI → puffert kein Streaming):
+> `default-src 'self'`, `script-src 'self'` (kein Inline-Script nötig — verifiziert),
+> `connect-src 'self'` + `nosniff`/`no-referrer`. Ein versehentlich eingebautes externes
+> Asset wird damit **hart blockiert** statt still zu laden. Live verifiziert (Header auf
+> API **und** SPA).
 
 - Source: [app/frontend/src](app/frontend/src) (**nicht** `frontend/` im Repo-Root)
 - Built: `app/ui_static/` (gitignored) — von [app/main.py](app/main.py) als

@@ -124,7 +124,7 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
     <QueryClientProvider client={qc}>
       <AuthProvider>
         <BrowserRouter>
-          <div style={{ display: 'flex', height: '100vh', background: '#fafafa', fontFamily: '"Helvetica Neue", Helvetica, Arial, sans-serif' }}>
+          <div style={{ display: 'flex', height: '100vh', background: '#fafafa', fontFamily: 'Arimo, "Helvetica Neue", Helvetica, Arial, sans-serif' }}>
             <Sidebar />
             <div style={{ flex: 1, overflow: 'auto' }}>
               <div style={{ borderBottom: '1px solid #ededed', background: '#fff', padding: '16px 28px' }}>
