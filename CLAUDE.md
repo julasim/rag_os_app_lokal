@@ -6,7 +6,7 @@ Sie enthält das, was beim Code-Lesen *nicht* offensichtlich ist.
 
 > **An Claude:** Bevor du die Arbeit in diesem Ordner beendest, aktualisiere
 > diese Datei mit neuen Entscheidungen/Stand — besonders §13 (Sicherheit).
-> **Zuletzt aktualisiert: 2026-07-20**
+> **Zuletzt aktualisiert: 2026-07-23**
 
 > ## ⚠️ STATUS 2026-07-20 — nativer Docker-freier Umbau KOMPLETT (M1–M8)
 >
@@ -47,6 +47,21 @@ Sie enthält das, was beim Code-Lesen *nicht* offensichtlich ist.
 >   Postgres-/Qdrant-/Ollama-/Haystack-Deps.
 
 > **Änderungslog:**
+> - 2026-07-22 — **MCP-Anbindungs-Karte + In-App-Firmenwechsel** (nachdokumentiert
+>   2026-07-23; die vier Commits nach `f0d4642` fehlten im Log). (1) **System-Seite
+>   zeigt die MCP-Anbindung für Claude Desktop** ([System.tsx](app/frontend/src/pages/System.tsx)):
+>   fertiger Konfig-Block zum Kopieren, an Multi-Vault angepasst — er nennt die
+>   **aktive Firma** (Vault) und weist darauf hin, dass der API-Key **maschinenweit**
+>   gilt (er liegt in `credentials.sqlite`, nicht im Vault; §4). (2) **MCP-Server
+>   heißt jetzt „SAZTG RAG_OS"** statt `sima-rag`
+>   ([mcp_server/server.py](app/mcp_server/server.py)) — wer eine alte Claude-Desktop-
+>   Konfiguration hat, muss den Eintrag neu ziehen. (3) **Firmenwechsel direkt in der
+>   App**, nicht mehr nur über das Tray-Menü: `Api.list_vaults()` / `Api.switch_vault()`
+>   in [desktop.py](app/desktop.py) sind über `window.pywebview.api.*` aus der Web-UI
+>   aufrufbar (nativer Ordner-Picker, wenn kein Pfad kommt); nach dem Setzen von
+>   `vault_path` startet die Shell sich **selbst neu** (`threading.Timer(0.5, shell._restart)`)
+>   — der Rückgabewert geht noch an die Seite raus, der Neustart folgt verzögert.
+>   `Api` bekommt dafür die `Shell`-Referenz (`js_api=Api(self)`). Auf `main` (`7d41392`).
 > - 2026-07-22 — **Graph-UI-Feinschliff + Uninstaller + DSGVO-Konzept.** Graph: Knotengröße
 >   per Slider (`nodeRelSize`), Knoten kleiner (PageRank-Skalierung ×320→×30), Kanten ohne
 >   Pfeile (nur Linien). Installer: Uninstaller entfernt den Programmordner vollständig
@@ -217,7 +232,9 @@ SQLite ([app/db/models.py](app/db/models.py)) ist Single-Source-of-Truth für
 Regeln: **neuen Keys/Nutzer-Code auf `get_local_session()`**, alles andere `get_session()`.
 **Keine DB-übergreifenden FKs** (documents.uploaded_by / query_log.api_key_id/user_id sind
 reine Audit-UUIDs). Vault-DB nutzt **Rollback-Journal statt WAL** (SMB-tauglich, Single-Writer).
-Vault-Wechsel: Tray „Vault (Firma)" → Neustart. Einmal-Migration Alt-`appstate.sqlite` →
+Vault-Wechsel: Tray „Vault (Firma)" **oder** direkt in der App (System-Seite →
+`window.pywebview.api.switch_vault()`, [desktop.py](app/desktop.py)); beide Wege setzen
+`vault_path` und **starten die Shell neu**. Einmal-Migration Alt-`appstate.sqlite` →
 Split in [db/migrate.py](app/db/migrate.py) (idempotent, Alt-DB → `.migrated`). Reader: liest
 `state.sqlite` aus dem lokalen Cache (Phase 2, noch offen).
 
@@ -331,6 +348,18 @@ Ordnerbaum) als React/Vite/TypeScript-App. Streamlit ist komplett weg — der
 tote `app/ui/`-Ordner und die `streamlit`/`pandas`-Dependencies wurden
 2026-07-11 entfernt. Die UI ist reine Admin-Oberfläche (Dashboard, Dokumente,
 Keys, System, Wartung); **keine** Suchseite mehr (Suche läuft über MCP, §5).
+
+> **BEHOBEN 2026-07-22 (war: externe Google-Fonts).** `index.html`/`preview.html` luden
+> **Inter von `fonts.googleapis.com`/`fonts.gstatic.com`** — der einzige Außenkontakt der
+> UI; Google sah bei jedem UI-Start die IP (DSGVO-relevant, widersprach der „100 % lokal"-
+> Zusage). **Fix:** beide `<link>`-Blöcke entfernt, Schrift auf **Helvetica als lokalen
+> System-Stack** umgestellt (`"Helvetica Neue", Helvetica, Arial, sans-serif` — SIMA-CD;
+> Windows substituiert Arial, metrisch identisch). **Kein Web-Font-Download mehr** —
+> verifiziert: keine `googleapis`/`gstatic`-Referenz mehr in Quellcode **und** gebautem
+> `dist/`. Echte Helvetica wird bewusst **nicht** mitgeliefert (kommerzielle Lizenz).
+> **Weiterhin offen:** es gibt **keine** CSP (`Content-Security-Policy`-Header), die
+> künftige externe Requests hart blocken würde — beim Hinzufügen von Frontend-Assets
+> also aufpassen.
 
 - Source: [app/frontend/src](app/frontend/src) (**nicht** `frontend/` im Repo-Root)
 - Built: `app/ui_static/` (gitignored) — von [app/main.py](app/main.py) als

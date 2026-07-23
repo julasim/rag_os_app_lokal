@@ -88,7 +88,7 @@ export default function Maintenance() {
   return (
     <div
       style={{
-        fontFamily: '-apple-system, "Inter", sans-serif',
+        fontFamily: '"Helvetica Neue", Helvetica, Arial, sans-serif',
         background: '#FAFAFA',
         minHeight: '100vh',
         padding: '16px',

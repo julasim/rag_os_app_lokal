@@ -21,6 +21,13 @@
 ## 2. Technische Maßnahmen (Art. 25/32)
 
 - **Lokal, keine Netz-Exposition:** nur `127.0.0.1`, kein offener Port, kein VPS/Cloud-Dienst.
+- **Keine externen Web-Ressourcen in der UI.** Die Oberfläche lädt **nichts** aus dem Netz.
+  *Korrektur/Historie:* bis 2026-07-22 lud die UI **Inter von Google Fonts**
+  (`fonts.googleapis.com`/`gstatic.com`) — Google sah damit bei jedem UI-Start die IP des
+  Rechners (der bekannte Google-Fonts-Fall). **Behoben:** Links entfernt, Schrift auf einen
+  **lokalen System-Stack** umgestellt (`"Helvetica Neue", Helvetica, Arial`); verifiziert,
+  dass im gebauten Frontend keine `googleapis`/`gstatic`-Referenz mehr steckt.
+  **Rest-Risiko:** es gibt (noch) **keine CSP**, die künftige externe Requests hart blockt.
 - **Zugriffskontrolle:** kanonische, serverseitig erzwungene Ordner-ACL
   ([auth/folders.py](../app/auth/folders.py)), per-User, segmentgrenzbewusst, IDOR-fest;
   Löschen nur Web-UI-Admin. Wissensgraph-Anzeige ebenfalls per-User ACL-gefiltert (§13).

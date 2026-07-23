@@ -27,7 +27,9 @@ const config: Config = {
         'danger-dot': '#ef4444',
       },
       fontFamily: {
-        sans: ['-apple-system', 'BlinkMacSystemFont', '"Inter"', '"Helvetica Neue"', 'sans-serif'],
+        // Helvetica zuerst (SIMA-Corporate-Design), rein lokal — kein Web-Font-Download.
+        // Windows substituiert Helvetica durch Arial (metrisch identisch).
+        sans: ['"Helvetica Neue"', 'Helvetica', 'Arial', 'sans-serif'],
         mono: ['ui-monospace', '"SF Mono"', '"JetBrains Mono"', 'monospace'],
       },
       borderRadius: {
